@@ -1,0 +1,14 @@
+[
+  {
+    "text": "I am Rahul",
+    "feedback": ["missing_education", "missing_skills"]
+  },
+  {
+    "text": "I am Rahul studying BTech",
+    "feedback": ["missing_skills"]
+  },
+  {
+    "text": "I am Rahul studying BTech and I know Python",
+    "feedback": []
+  }
+]

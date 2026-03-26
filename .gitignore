@@ -1,0 +1,85 @@
+# -------------------- PYTHON --------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+.env.*
+
+# -------------------- MODEL FILES --------------------
+# Large ML / NLP models (never push to GitHub)
+*.pt
+*.pth
+*.bin
+*.onnx
+*.h5
+*.ckpt
+*.safetensors
+
+# HuggingFace / Transformers cache
+cache/
+.huggingface/
+transformers_cache/
+
+# Sentence-transformers cache
+sentence_transformers/
+
+# -------------------- DATA FILES --------------------
+# Audio files (recordings)
+*.wav
+*.mp3
+*.webm
+
+# Generated / temporary audio
+temp_*
+uploads/
+recordings/
+
+# Datasets (if large)
+data/*.csv
+data/*.json
+data/*.zip
+
+# -------------------- LOG FILES --------------------
+logs/
+*.log
+
+# -------------------- SYSTEM FILES --------------------
+.DS_Store
+Thumbs.db
+
+# -------------------- IDE / EDITOR --------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# -------------------- FASTAPI / SERVER --------------------
+*.db
+*.sqlite3
+
+# -------------------- BUILD FILES --------------------
+dist/
+build/
+*.egg-info/
+
+# -------------------- ENV CONFIG --------------------
+.env
+.env.local
+.env.production
+
+# -------------------- NODE (if frontend grows later) --------------------
+node_modules/
+package-lock.json
+
+# -------------------- TEST / DEBUG --------------------
+.coverage
+htmlcov/
+.pytest_cache/
+
+# -------------------- MISC --------------------
+*.bak
+*.tmp
+*.temp

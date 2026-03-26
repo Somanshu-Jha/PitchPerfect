@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+numpy
+scipy
+sounddevice
+openai-whisper
+sentence-transformers
+torch
+librosa
+python-multipart
+pydantic
+faster-whisper
+silero-vad
+torchaudio
+torch
+numpy
