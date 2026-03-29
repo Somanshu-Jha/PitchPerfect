@@ -13,14 +13,11 @@ class FillerDetectionService:
         words = text.lower().split()
 
         count = 0
-        positions = []
+        detected_fillers = []
 
-        for i, word in enumerate(words):
+        for word in words:
             if word in self.fillers:
                 count += 1
-                positions.append(i)
+                detected_fillers.append(word)
 
-        return {
-            "filler_count": count,
-            "positions": positions
-        }
+        return detected_fillers

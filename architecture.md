@@ -1,50 +1,82 @@
 # Architecture
 
-The system follows a **modular AI pipeline architecture**.
+## 🧠 High-Level Architecture
+
+```
+Frontend (React)
+        ↓
+API Layer (FastAPI)
+        ↓
+Speech Pipeline Controller
+        ↓
+-----------------------------------
+| ASR | NLP | DL Models | Feedback |
+-----------------------------------
+        ↓
+Database + Response
+```
 
 ---
 
-# High Level Flow
+## 🔧 Core Components
 
-User Speech
-↓
-Speech Recognition
-↓
-Transcript Processing
-↓
-Parameter Detection
-↓
-Scoring Engine
-↓
-Voice Analysis
-↓
-Feedback Generation
-↓
-Results Display
+### 1. Speech Pipeline
 
----
+Controls the full execution flow.
 
-# Components
+### 2. ASR Engine
 
-Speech Engine
-Converts audio into text.
+* Faster-Whisper (GPU)
+* Multi-pass decoding
 
-NLP Engine
-Detects introduction parameters.
+### 3. NLP Layer
 
-Evaluation Engine
-Calculates score.
+* Semantic extraction
+* Name correction
 
-Voice Analysis Engine
-Analyzes clarity, pitch, and speech rate.
+### 4. DL Models
 
-Feedback Engine
-Generates improvement suggestions.
+* Scoring model
+* English level classifier
+
+### 5. Feedback Engine
+
+* LLM-based generation
+* Guard system
+
+### 6. Model Manager
+
+* Loads/unloads models dynamically
+* Prevents GPU overload
 
 ---
 
-# Deployment
+## ⚙️ Hardware Usage
 
-Local desktop or web application.
+**GPU**
 
-Runs fully offline.
+* ASR
+* LLM inference
+
+**CPU**
+
+* embeddings
+* feature extraction
+* database
+
+---
+
+## 🔐 Security
+
+* JWT authentication
+* Protected routes
+* Hashed passwords
+
+---
+
+## 📊 Design Principles
+
+* Modular architecture
+* Fault tolerance
+* Low latency
+* Scalable design

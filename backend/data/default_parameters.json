@@ -1,11 +1,15 @@
 {
   "question": "Introduce yourself",
   "expected_topics": [
+    "greetings",
     "name",
     "education",
     "skills",
     "experience",
-    "career goals"
+    "career goals",
+    "strengths",
+    "qualities",
+    "areas of interest"
   ],
   "evaluation_weights": {
     "content": 0.4,

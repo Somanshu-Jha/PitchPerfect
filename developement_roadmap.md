@@ -1,25 +1,51 @@
 # Development Roadmap
 
-Phase 1
-Speech recording system
+## Phase 1 – Core System ✅
 
-Phase 2
-Speech to text integration
+* ASR pipeline
+* Semantic extraction
+* Basic scoring
+* Feedback generation
 
-Phase 3
-Parameter detection engine
+---
 
-Phase 4
-Scoring system
+## Phase 2 – Intelligence Upgrade ✅
 
-Phase 5
-Voice clarity and tone analysis
+* Hybrid scoring
+* DL models
+* Adaptive feedback
+* Non-repetitive responses
 
-Phase 6
-AI feedback generation
+---
 
-Phase 7
-Frontend UI development
+## Phase 3 – Production Hardening ✅
 
-Phase 8
-Testing and optimization
+* GPU optimization
+* caching
+* retry safety
+* authentication
+
+---
+
+## Phase 4 – Advanced Features (Next)
+
+* Real-time streaming (WebSocket)
+* Live feedback
+* Emotion detection
+* Filler word detection
+
+---
+
+## Phase 5 – Scaling
+
+* distributed processing
+* database optimization
+* load balancing
+
+---
+
+## Long-Term Vision
+
+* AI interviewer simulation
+* personalized learning system
+* industry-level evaluation engine

@@ -1,30 +1,59 @@
-# Introduction Parameters
+# Parameter Schema
 
-The system evaluates introductions based on **20 parameters**.
+## 📥 Input
 
-Each detected parameter = **1 mark**
-
-Total score = **20**
+```json
+{
+  "audio_file": "binary"
+}
+```
 
 ---
 
-1. Greeting
-2. Name
-3. Age
-4. Course / Degree
-5. Year of study
-6. College / School
-7. Location
-8. Area of interest
-9. Skills
-10. Hobbies
-11. Strengths
-12. Achievements
-13. Projects
-14. Internship experience
-15. Career goal
-16. Passion or motivation
-17. Teamwork ability
-18. Leadership qualities
-19. Learning mindset
-20. Closing statement
+## 📤 Output
+
+```json
+{
+  "transcript": "string",
+  "confidence": 78.5,
+  "semantic": {
+    "name": "string",
+    "education": "string",
+    "skills": ["string"],
+    "experience": {
+      "role": "string"
+    },
+    "goals": "string"
+  },
+  "scores": {
+    "clarity": 7.5,
+    "completeness": 6.8,
+    "structure": 7.2,
+    "confidence": 6.5,
+    "technical_depth": 7.0,
+    "overall_score": 7.1
+  },
+  "feedback": {
+    "positives": ["string"],
+    "improvements": ["string"]
+  }
+}
+```
+
+---
+
+## 📊 Internal Features
+
+* speech_rate
+* pause_ratio
+* pitch_variance
+* energy_consistency
+* embedding_vector
+
+---
+
+## 🧠 Derived Parameters
+
+* dynamic_confidence
+* english_level
+* semantic_flags

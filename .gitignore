@@ -1,85 +1,102 @@
-# -------------------- PYTHON --------------------
-__pycache__/
-*.py[cod]
-*$py.class
+# ================================
 
-# Virtual environment
+# PYTHON
+
+# ================================
+
+**pycache**/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+
+# ================================
+
+# VIRTUAL ENV
+
+# ================================
+
 venv/
 .env/
-.env.*
+.env
 
-# -------------------- MODEL FILES --------------------
-# Large ML / NLP models (never push to GitHub)
-*.pt
+# ================================
+
+# MODEL FILES (IMPORTANT)
+
+# ================================
+
 *.pth
+*.pt
 *.bin
 *.onnx
-*.h5
-*.ckpt
-*.safetensors
 
-# HuggingFace / Transformers cache
-cache/
-.huggingface/
-transformers_cache/
+backend/data/models/
+backend/data/cache/
 
-# Sentence-transformers cache
-sentence_transformers/
+# ================================
 
-# -------------------- DATA FILES --------------------
-# Audio files (recordings)
+# AUDIO FILES
+
+# ================================
+
 *.wav
 *.mp3
 *.webm
-
-# Generated / temporary audio
-temp_*
 uploads/
-recordings/
 
-# Datasets (if large)
-data/*.csv
-data/*.json
-data/*.zip
+# ================================
 
-# -------------------- LOG FILES --------------------
-logs/
-*.log
+# NODE / FRONTEND
 
-# -------------------- SYSTEM FILES --------------------
+# ================================
+
+node_modules/
+dist/
+build/
+
+# ================================
+
+# OS FILES
+
+# ================================
+
 .DS_Store
 Thumbs.db
 
-# -------------------- IDE / EDITOR --------------------
+# ================================
+
+# IDE
+
+# ================================
+
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# -------------------- FASTAPI / SERVER --------------------
-*.db
-*.sqlite3
+# ================================
 
-# -------------------- BUILD FILES --------------------
-dist/
-build/
-*.egg-info/
+# ENV VARIABLES
 
-# -------------------- ENV CONFIG --------------------
-.env
+# ================================
+
 .env.local
 .env.production
 
-# -------------------- NODE (if frontend grows later) --------------------
-node_modules/
-package-lock.json
+# ================================
 
-# -------------------- TEST / DEBUG --------------------
-.coverage
-htmlcov/
-.pytest_cache/
+# LOGS
 
-# -------------------- MISC --------------------
-*.bak
-*.tmp
-*.temp
+# ================================
+
+logs/
+*.log
+
+# ================================
+
+# TEMP FILES
+
+# ================================
+
+tmp/
+temp/

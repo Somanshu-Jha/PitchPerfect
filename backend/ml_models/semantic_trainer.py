@@ -26,7 +26,7 @@ y = df[labels]
 
 # ---------------- GPU / CPU AUTO ----------------
 import torch
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"
 
 print("🚀 Using device:", device)
 

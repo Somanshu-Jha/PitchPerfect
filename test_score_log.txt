@@ -1,0 +1,18 @@
+
+--- INITIALIZING DL SCORING NETWORK ---
+
+[Action] Extracting 7-param Vectors & Inferencing...
+
+Evaluating Context 1: Perfect Semantic Interview
+Output Score: 8.0 / 10.0
+Inference Latency: 0.00 ms
+Source Engaged: pytorch_ffnn
+DL Feature Vector: [1.0, 0.9, 0.22666666666666666, 0.8529411764705882, 0.0, 0.5, 0.8]
+
+Evaluating Context 2: Poorly Executed Interview (Incomplete + Fillers)
+Output Score: 4.9 / 10.0
+Inference Latency: 0.00 ms
+Source Engaged: pytorch_ffnn
+DL Feature Vector: [0.2, 0.9, 0.06666666666666667, 1.0, 0.1, 0.5, 0.3]
+
+--- DL SCORING TEST COMPLETE ---

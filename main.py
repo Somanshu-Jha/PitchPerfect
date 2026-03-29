@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.api.student_routes import router as student_router
+from backend.api.auth_routes import router as auth_router
 
 
 # -------------------- APP INIT --------------------
@@ -21,6 +22,7 @@ app.add_middleware(
 
 # -------------------- ROUTES --------------------
 app.include_router(student_router, prefix="/student", tags=["Student"])
+app.include_router(auth_router)
 
 
 # -------------------- ROOT --------------------

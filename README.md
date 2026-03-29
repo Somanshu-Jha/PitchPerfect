@@ -1,80 +1,97 @@
-# Introlytics
+# Introlytics – AI Interview Evaluation Engine
 
-AI-powered system that evaluates a student's **spoken interview introduction** and provides structured feedback.
+Introlytics is a production-grade AI system designed to evaluate interview responses using speech processing, deep learning, and generative AI. The platform analyzes spoken answers, extracts semantic meaning, evaluates communication quality, and generates personalized feedback.
 
-The system records speech, converts it into text, detects important introduction parameters, scores the introduction, and generates improvement suggestions.
+## 🚀 Features
 
-The project is designed to run **locally without paid APIs**.
-
----
-
-# Problem
-
-Students often struggle to give structured introductions during interviews.
-They forget key points and receive no structured feedback.
-
----
-
-# Solution
-
-Introlytics acts as an **AI introduction coach**.
-
-It listens to the student’s introduction and evaluates it automatically.
+* 🎤 Speech-to-text using optimized Whisper (GPU)
+* 🧠 Semantic understanding (LLM-based)
+* 📊 Hybrid scoring (LLM + Deep Learning)
+* 🗣️ Audio intelligence (confidence, fluency, pitch)
+* 🎯 Adaptive feedback (based on user level)
+* 🔁 Non-repetitive GenAI responses
+* 🛡️ Feedback contradiction guard
+* 🔐 JWT Authentication (Login/Signup)
+* ⚡ GPU optimized pipeline
 
 ---
 
-# Core Features
+## 🧠 How It Works
 
-• Speech recording
-• Speech → text conversion
-• Detection of 20 introduction parameters
-• Automated scoring system
-• Feedback generation
-• Voice clarity and tone analysis
-
----
-
-# Example Flow
-
-1. Student clicks **Start Recording**
-2. Student speaks introduction
-3. Speech converted to text
-4. AI detects introduction parameters
-5. Score generated out of **20**
-6. Feedback displayed
+1. User records or uploads audio
+2. Audio is preprocessed and transcribed
+3. Semantic meaning is extracted
+4. Audio + text features are analyzed
+5. Scoring is computed (Hybrid AI)
+6. Feedback is generated dynamically
+7. Results displayed in dashboard
 
 ---
 
-# Tech Stack
+## 🏗️ Tech Stack
 
-Backend
-Python + FastAPI
+**Backend**
 
-Speech Recognition
-Whisper / Vosk
+* FastAPI
+* PyTorch
+* Faster-Whisper (CTranslate2)
+* SentenceTransformers
+* SQLite
 
-NLP
-spaCy
-Sentence Transformers
+**Frontend**
 
-Audio Analysis
-Librosa
+* React (Vite)
+* Tailwind CSS
 
-Frontend
-HTML
-CSS
-JavaScript
+**AI/ML**
 
----
-
-# Goal
-
-Build an **AI interview practice platform** that helps students improve their communication skills.
+* Transformer models
+* BiLSTM + Dense layers
+* Custom scoring networks
 
 ---
 
-# Future Scope
+## ⚙️ Setup
 
-• Full AI mock interviews
-• Resume-based question generation
-• Camera-based body language analysis
+```bash
+# Backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+# Frontend
+npm install
+npm run dev
+```
+
+---
+
+## 🔐 Authentication
+
+* JWT-based authentication
+* Secure password hashing (bcrypt)
+* Protected API routes
+
+---
+
+## 📊 System Goals
+
+* High transcription accuracy (~97%)
+* Context-aware evaluation
+* Personalized feedback
+* Stable real-time performance
+
+---
+
+## 📌 Status
+
+System is production-ready with ongoing improvements in:
+
+* real-time streaming
+* advanced scoring models
+* UX enhancements
+
+---
+
+## 👨‍💻 Author
+
+Built as a production-grade AI system focusing on real-world interview evaluation.

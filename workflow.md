@@ -1,52 +1,100 @@
 # Workflow
 
-Step 1
-User clicks **Start Recording**
+This document explains the complete execution flow of Introlytics from input to output.
 
-Step 2
-User speaks introduction.
+## 🔁 End-to-End Flow
 
-Example:
-
-"Hello, my name is John. I am a first year BTech AI student..."
-
----
-
-Step 3
-Speech recognition converts audio into text.
-
----
-
-Step 4
-System analyzes transcript.
+1. Audio Input
+2. Audio Preprocessing
+3. Speech Recognition
+4. Transcript Validation
+5. Semantic Extraction
+6. Feature Extraction
+7. Scoring
+8. Feedback Generation
+9. Response Delivery
 
 ---
 
-Step 5
-AI checks whether introduction parameters are present.
+## 🎤 Step 1: Audio Input
+
+* User records or uploads audio
+* File is sent to backend API
 
 ---
 
-Step 6
-Score calculated out of **20**.
+## 🧹 Step 2: Audio Preprocessing
+
+* Normalization
+* Silence trimming
+* Noise handling
 
 ---
 
-Step 7
-Voice features analyzed.
+## 🧠 Step 3: Speech Recognition
 
-Speech rate
-Pitch
-Energy
-Pause patterns
+* Faster-Whisper (GPU)
+* Beam search decoding
+* VAD filtering
 
 ---
 
-Step 8
-AI generates feedback.
+## 🔄 Step 4: Transcript Validation
 
-Example:
+* Compare transcript length vs audio duration
+* Reprocess if incomplete
+* Merge segments using timestamps
 
-• Add more information about your projects
-• Improve voice modulation
-• Speak slightly slower
+---
+
+## 🔍 Step 5: Semantic Extraction
+
+* LLM extracts:
+
+  * name
+  * education
+  * skills
+  * experience
+  * goals
+
+---
+
+## 📊 Step 6: Feature Extraction
+
+Audio:
+
+* speech rate
+* pause ratio
+* pitch variance
+* energy stability
+
+Text:
+
+* embeddings
+* structure
+* vocabulary richness
+
+---
+
+## ⚖️ Step 7: Scoring
+
+Hybrid scoring:
+
+* 60% LLM (context understanding)
+* 40% DL model (objective signals)
+
+---
+
+## 💬 Step 8: Feedback Generation
+
+* Generated via LLM
+* Adapted based on user level
+* Guarded against contradictions
+* Non-repetitive
+
+---
+
+## 📤 Step 9: Response
+
+* JSON response returned
+* Displayed in frontend dashboard

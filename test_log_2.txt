@@ -1,0 +1,24 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+--- INITIALIZING RAG TEST ---
+Loading all-MiniLM-L6-v2 on CPU...
+
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]
+Loading weights: 100%|##########| 103/103 [00:00<00:00, 3540.45it/s]
+BertModel LOAD REPORT from: sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+
+[Action] Ingesting Past Attempt...
+Total FAISS Records: 1
+
+[Action] Querying RAG Database for user history...
+
+[RAG RESULTS] (Latency: 18.85 ms)
+Past areas to improve: [['You forgot to mention your education.', 'Try speaking louder.']]
+
+--- RAG TEST COMPLETE ---
