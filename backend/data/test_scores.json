@@ -1,0 +1,32 @@
+{
+  "STRONG": {
+    "clarity": 8.2,
+    "confidence": 8.2,
+    "structure": 9.6,
+    "dl_overall": 8.7
+  },
+  "WEAK": {
+    "clarity": 2.1,
+    "confidence": 2.2,
+    "structure": 2.2,
+    "dl_overall": 2.2
+  },
+  "MID": {
+    "clarity": 6.8,
+    "confidence": 7.8,
+    "structure": 7.7,
+    "dl_overall": 7.5
+  },
+  "GARBAGE": {
+    "clarity": 2.1,
+    "confidence": 2.2,
+    "structure": 2.0,
+    "dl_overall": 2.1
+  },
+  "FULL": {
+    "clarity": 8.3,
+    "confidence": 8.2,
+    "structure": 9.9,
+    "dl_overall": 8.8
+  }
+}

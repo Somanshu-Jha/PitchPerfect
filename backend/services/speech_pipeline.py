@@ -1,13 +1,20 @@
 import os
+import time
+import uuid
+import hashlib
+import random
 import torch
+import numpy as np
 import logging
 import asyncio
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
-# ── Hardware Thread Enforcement ───────────────────────────────────────────────
-os.environ.setdefault("OMP_NUM_THREADS", "8")
-os.environ.setdefault("MKL_NUM_THREADS", "8")
-os.environ.setdefault("OPENBLAS_NUM_THREADS", "8")
+# ── Hardware Thread Enforcement — Use ALL CPU Cores ──────────────────────────
+_NUM_CORES = os.cpu_count() or 8
+os.environ["OMP_NUM_THREADS"] = str(_NUM_CORES)
+os.environ["MKL_NUM_THREADS"] = str(_NUM_CORES)
+os.environ["OPENBLAS_NUM_THREADS"] = str(_NUM_CORES)
+os.environ["NUMEXPR_NUM_THREADS"] = str(_NUM_CORES)
 
 from backend.services.transcription_service import TranscriptionService
 from backend.services.correction_service import CorrectionService
@@ -22,42 +29,69 @@ from backend.core.model_manager import model_manager
 from backend.core.database import db
 from backend.core.rlhf_filter import rlhf_filter
 from backend.core.genai_engine import genai_engine
-from backend.core.result_cache import result_cache
 
 logger = logging.getLogger(__name__)
 
 # ── Confidence Gate Constants ─────────────────────────────────────────────────
-_SKIP_LLM_WORD_THRESHOLD = 12          # Skip LLM if < 12 words
-_SKIP_LLM_CONFIDENCE_THRESHOLD = 0.85 # Skip LLM if ASR confidence > 0.85
-_SKIP_LLM_SCORE_CAP = 7.5             # Max score on gated path
+_SKIP_LLM_WORD_THRESHOLD = 12
+_SKIP_LLM_CONFIDENCE_THRESHOLD = 0.85
+_SKIP_LLM_SCORE_CAP = 7.5
 
-# ── Top-level module function for ProcessPoolExecutor (must be picklable) ─────
+# ── Top-level subprocess functions (must be picklable) ────────────────────────
 def _run_audio_analysis_subprocess(audio_path: str) -> dict:
-    """
-    Standalone function (module-level) used by ProcessPoolExecutor.
-    Cannot be a class method — multiprocessing requires picklable callables.
-    Runs AudioAnalysisService.extract() in a dedicated CPU process,
-    completely bypassing the GIL for true CPU parallelism.
-    """
+    """CPU process: deep audio feature extraction (bypasses GIL)."""
     try:
-        # Import inside subprocess to avoid pickling service objects
         from backend.services.audio_analysis_service import AudioAnalysisService
         svc = AudioAnalysisService()
         return svc.extract(audio_path)
     except Exception as e:
         import logging as _log
-        _log.getLogger(__name__).error(f"❌ [AudioAnalysis Subprocess] Failed: {e}")
+        _log.getLogger(__name__).error(f"❌ [AudioAnalysis] Failed: {e}")
         return {
-            "speech_rate": 1.5, "pause_ratio": 0.2, "pitch": 150.0,
-            "pitch_variance": 0.3, "energy_consistency": 0.6,
-            "pronunciation_score": 0.5, "speech_rate_stability": 0.5,
-            "dynamic_confidence": 50.0, "confidence_label": "MEDIUM"
+            "speech_rate": 1.5, "wpm_estimate": 140, "pace_label": "ideal",
+            "pause_ratio": 0.2, "long_pauses": 0, "avg_pause_duration": 0,
+            "pitch": 150.0, "pitch_range": 50, "pitch_variance": 0.3,
+            "energy_consistency": 0.6, "energy_trajectory": "unknown",
+            "speech_rate_stability": 0.5,
+            "tone_expressiveness": 0.5, "tone_label": "moderate", "tone_richness": 0.5,
+            "fluency_score": 0.5, "pronunciation_score": 0.5,
+            "spectral_flatness": 0.1, "hnr_score": 0.5,
+            "dynamic_confidence": 50.0, "confidence_label": "MEDIUM",
+            "reasoning": {
+                "tone": "Analysis unavailable.", "fluency": "Analysis unavailable.",
+                "pronunciation": "Analysis unavailable.", "pace": "Analysis unavailable.",
+                "energy": "Analysis unavailable."
+            }
         }
+
+def _run_preprocessing_subprocess(audio_path: str, output_path: str) -> tuple:
+    """CPU process: audio preprocessing (ffmpeg conversion)."""
+    try:
+        from backend.services.audio_preprocessing_service import AudioPreprocessingService
+        svc = AudioPreprocessingService()
+        return svc.process(audio_path, output_path)
+    except Exception as e:
+        import logging as _log
+        _log.getLogger(__name__).error(f"❌ [Preprocessing] Failed: {e}")
+        return output_path, {"clipping": False, "distorted": False, "low_energy": False}
 
 
 class SpeechPipeline:
+    """
+    High-performance parallel pipeline with full CPU/GPU utilization:
+    
+    Stage 1 (CPU):       Preprocessing (ffmpeg) — unique temp files
+    Stage 2 (Parallel):  ASR (GPU) ‖ AudioAnalysis (CPU, all cores)
+    Stage 3 (Parallel):  Semantic + Feedback (GPU/CPU) ‖ Filler Detection (CPU)
+    Stage 4 (CPU):       Scoring (DL inference)
+    Stage 5 (CPU):       DB tracking + caching
+    
+    DETERMINISM: Uses audio hash as seed for all random operations.
+    Same audio file → same seed → same results every time.
+    """
+    
     def __init__(self):
-        logger.info("\n========== [Pipeline] Booting Engine ==========")
+        logger.info(f"\n========== [Pipeline] Booting Engine ({_NUM_CORES} CPU cores) ==========")
         self.preprocessor = AudioPreprocessingService()
         self.transcriber = TranscriptionService()
         self.corrector = CorrectionService()
@@ -67,232 +101,188 @@ class SpeechPipeline:
         self.filler_service = FillerDetectionService()
         self.feedback_service = FeedbackService()
         self.english_level_model = EnglishLevelClassifier()
-        # CPU process pool — persisted across calls to avoid spawn overhead
-        # max_workers = cpu_count - 1 to leave one core for the main process
-        _cpu_workers = max(1, (os.cpu_count() or 4) - 1)
-        self._cpu_pool = ProcessPoolExecutor(max_workers=_cpu_workers)
-        logger.info(f"✅ Pipeline Initialized. CPU Pool: {_cpu_workers} workers\n")
 
-    async def process(self, audio_path: str, user_id: str = "local_demo", audio_bytes: bytes = None):  # noqa: C901
-        logger.info(f"\n========== PIPELINE START (User: {user_id}) ==========")
+        # Persistent thread/process pools
+        self._cpu_pool = ProcessPoolExecutor(max_workers=_NUM_CORES)
+        self._gpu_pool = ThreadPoolExecutor(max_workers=1)
+        logger.info(f"✅ Pipeline ready. CPU Pool: {_NUM_CORES} workers, GPU Pool: 1 thread\n")
 
-        # Safe sentinel — overwritten by whichever scoring path runs
+    def _seed_from_audio(self, audio_bytes: bytes) -> int:
+        """
+        Generate a deterministic seed from audio bytes.
+        Same audio file → same seed → same random choices → same results.
+        """
+        audio_hash = hashlib.sha256(audio_bytes).hexdigest()
+        return int(audio_hash[:8], 16)  # First 8 hex chars → int seed
+
+    async def process(self, audio_path: str, user_id: str = "local_demo", audio_bytes: bytes = None):
+        logger.info(f"\n{'='*60}")
+        logger.info(f"🚀 PIPELINE START (User: {user_id}) — {_NUM_CORES} CPU cores + GPU")
+        logger.info(f"{'='*60}")
+        t_pipeline_start = time.perf_counter()
+        timings = {}
+
         score_packet: dict = {"overall_score": 6.0, "features": []}
+        
+        # Track temp files for cleanup
+        temp_files = []
 
-        # ── CACHE CHECK (ABSOLUTE FIRST STEP) ────────────────────────────────
-        # SHA256(audio_bytes + user_id) → same audio + same user = identical key
+        # ── DETERMINISTIC SEEDING ──
+        # Same audio bytes → same seed → same random operations → consistent results
         if audio_bytes is not None:
-            cached = result_cache.get(audio_bytes, user_id)
-            if cached is not None:
-                logger.info("⚡ [Pipeline] Returning cached result — skipping full pipeline.")
-                return cached
+            seed = self._seed_from_audio(audio_bytes)
+            random.seed(seed)
+            np.random.seed(seed % (2**32))
+            logger.info(f"🎲 [Pipeline] Deterministic seed set: {seed}")
 
-        # ── STEP 1: PREPROCESS ───────────────────────────────────────────────
-        clean_audio, audio_flags = self.preprocessor.process(audio_path, "clean.wav")
-        logger.info(f"[AudioFlags]: {audio_flags}")
-
-        # ── STEP 2: TRUE PARALLEL EXECUTION ──────────────────────────────────
-        #
-        #  GPU path  → ASR (Whisper) via ThreadPoolExecutor (GPU model not picklable)
-        #  CPU path  → AudioAnalysis via ProcessPoolExecutor (bypasses GIL)
-        #
-        #  Both are dispatched as futures, then awaited together with asyncio.gather
-        #  so they run concurrently without blocking each other.
-        #
         loop = asyncio.get_running_loop()
 
-        # Dispatch GPU task: ASR → single thread (needs shared VRAM)
-        _gpu_pool = ThreadPoolExecutor(max_workers=1)
-        asr_task = loop.run_in_executor(_gpu_pool, self.transcriber.transcribe, clean_audio)
-
-        # Dispatch CPU task: audio feature extraction → process pool (true parallelism)
-        cpu_task = loop.run_in_executor(
-            self._cpu_pool, _run_audio_analysis_subprocess, clean_audio
+        # ══════════════════════════════════════════════════════════════════════
+        # STAGE 1: PREPROCESSING (CPU subprocess)
+        # ══════════════════════════════════════════════════════════════════════
+        t_step = time.perf_counter()
+        # Use unique output path to prevent race conditions
+        unique_id = uuid.uuid4().hex[:12]
+        preprocess_output = f"clean_{unique_id}.wav"
+        
+        clean_audio, audio_flags = await loop.run_in_executor(
+            self._cpu_pool, _run_preprocessing_subprocess, audio_path, preprocess_output
         )
+        temp_files.append(clean_audio)
+        timings["preprocessing"] = time.perf_counter() - t_step
+        logger.info(f"✅ [STAGE 1] Preprocessing: {timings['preprocessing']:.2f}s | Flags: {audio_flags}")
 
-        # Await both in parallel — neither blocks the other
+        # ══════════════════════════════════════════════════════════════════════
+        # STAGE 2: TRUE PARALLEL — ASR (GPU) ‖ AudioAnalysis (CPU, all cores)
+        # ══════════════════════════════════════════════════════════════════════
+        t_step = time.perf_counter()
+
+        # GPU: ASR transcription (ThreadPool — CUDA models not picklable)
+        asr_task = loop.run_in_executor(self._gpu_pool, self.transcriber.transcribe, clean_audio)
+        # CPU: Deep audio feature extraction (ProcessPool — true parallelism)
+        cpu_task = loop.run_in_executor(self._cpu_pool, _run_audio_analysis_subprocess, clean_audio)
+
+        # Await BOTH in parallel — GPU and CPU working simultaneously
         asr_result, audio_features = await asyncio.gather(asr_task, cpu_task)
-        _gpu_pool.shutdown(wait=False)
+        timings["parallel_asr_audio"] = time.perf_counter() - t_step
+        logger.info(f"✅ [STAGE 2] Parallel ASR(GPU)+AudioAnalysis(CPU): {timings['parallel_asr_audio']:.2f}s")
 
         (raw_text, transcript_confidence) = asr_result
+
+        # ── ASR RETRY if empty ───────────────────────────────────────────────
+        if not raw_text or not raw_text.strip() or raw_text.strip() == "Audio processing failed or transcript empty.":
+            logger.warning("⚠️ [ASR RETRY] Empty transcript — retrying...")
+            try:
+                t_retry = time.perf_counter()
+                asr_result = await loop.run_in_executor(self._gpu_pool, self.transcriber.transcribe, clean_audio)
+                (raw_text, transcript_confidence) = asr_result
+                logger.info(f"✅ [ASR RETRY] Recovered {len(raw_text.split())} words in {time.perf_counter()-t_retry:.2f}s")
+            except Exception as e:
+                logger.error(f"❌ [ASR RETRY] Failed: {e}")
+                raw_text = "Audio transcription failed after retry."
+                transcript_confidence = 0.0
+
         dynamic_confidence = audio_features.get("dynamic_confidence", transcript_confidence * 100)
-        confidence_label = audio_features.get("confidence_label", "MEDIUM")  # LOW/MEDIUM/HIGH from audio analysis
-        logger.info(f"[RAW TRANSCRIPT] ({dynamic_confidence:.1f}% Dynamic Conf [{confidence_label}]): {raw_text}")
+        confidence_label = audio_features.get("confidence_label", "MEDIUM")
+        logger.info(f"📝 Transcript ({dynamic_confidence:.1f}% conf [{confidence_label}]): {raw_text[:100]}...")
 
-        # ── STEP 3: CORRECTION ───────────────────────────────────────────────
+        # ══════════════════════════════════════════════════════════════════════
+        # STAGE 3: CORRECTION + SEMANTIC + FEEDBACK (Parallel with Fillers)
+        # ══════════════════════════════════════════════════════════════════════
+        t_step = time.perf_counter()
         refined_text = self.corrector.refine(raw_text)
-
-        # ── CONFIDENCE GATING ─────────────────────────────────────────────────
-        # For very short / very confident transcripts, skip LLM entirely
         word_count = len(refined_text.split())
-        skip_llm = (
-            word_count < _SKIP_LLM_WORD_THRESHOLD
-            and transcript_confidence > _SKIP_LLM_CONFIDENCE_THRESHOLD
-        )
+        timings["correction"] = time.perf_counter() - t_step
 
-        if skip_llm:
-            logger.info(
-                f"🚀 [ConfidenceGate] Skipping LLM — {word_count} words, "
-                f"confidence={transcript_confidence:.2f}. Fast-path activated."
-            )
+        # Short transcript still gets processed — no early return
+        if word_count < 10:
+            logger.info(f"⚠️ [ShortInput] {word_count} words — processing with reduced expectations.")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # STAGE 4: LLM PIPELINE (Semantic) + RULE-BASED FEEDBACK
+        # ══════════════════════════════════════════════════════════════════════
+        t_llm = time.perf_counter()
+        llm_used = True
+
+        english_lvl = self.english_level_model.classify(refined_text, audio_features)
+        logger.info(f"🧠 [Level] English Level: {english_lvl}")
+
+        try:
+            semantic_result = self.semantic.analyze(refined_text, raw_text=raw_text)
+        except Exception as e:
+            logger.error(f"❌ Semantic failure: {e}")
             semantic_result = {
-                "intent": {"detected": [], "confidence": transcript_confidence},
-                "structured": {},
-                "confidence_map": {},
-                "evidence_map": {}
+                "intent": {"detected": [], "confidence": 0.0},
+                "structured": {}, "confidence_map": {}, "evidence_map": {}
             }
-            scores = {
-                "overall_score": max(2.0, min(_SKIP_LLM_SCORE_CAP, word_count * 0.3)),
-                "note": "Confidence-gated fast path — LLM skipped",
-                "source": "heuristic_fast"
-            }
-            feedback = {
-                "positives": ["Your response was received."],
-                "improvements": ["Please provide a more detailed answer for full AI evaluation."],
-                "coaching_summary": "Your answer was too short for full AI analysis. Please elaborate on your background."
-            }
-            english_lvl = "Beginner"
+
+        llm_score = None
+
+        # ── Filler detection (lightweight, CPU) ──
+        try:
+            fillers = self.filler_service.detect(refined_text)
+        except Exception:
             fillers = []
-            completeness_issues = []
-            llm_used = False
 
-        else:
-            # ── STEP 4: COMBINED LLM CALL (semantic + scores + feedback) ─────────
-            llm_used = True
-            combined_result = None
-            historical_context = []
-            
-            english_lvl = self.english_level_model.classify(refined_text, audio_features)
-            logger.info(f"🧠 [EnglishLevelClassifier] Determined User Level: {english_lvl}")
+        # ── Feedback Generation (Rule-based with audio reasoning) ──
+        try:
+            feedback = self.feedback_service.generate(
+                user_id=user_id, transcript=refined_text,
+                semantic=semantic_result, scores={"overall_score": 6.0},
+                fillers=fillers, english_level=english_lvl,
+                audio_features=audio_features
+            )
+        except Exception as e:
+            logger.error(f"❌ Feedback failure: {e}")
+            feedback = {
+                "positives": [],
+                "improvements": [], 
+                "coaching_summary": "Feedback generation temporarily unavailable. Please try again.",
+                "audio_reasoning": {}
+            }
 
-            try:
-                # Pull RAG context for combined call injection
-                rag_records = self.feedback_service.rag_service.retrieve_context(user_id, refined_text, top_k=2)
-                if rag_records:
-                    historical_context = [r.get("improvements", []) for r in rag_records if r.get("improvements")]
+        completeness_issues = []
+        timings["llm_semantic_feedback"] = time.perf_counter() - t_llm
+        logger.info(f"✅ [STAGE 4] LLM+Semantic+Feedback: {timings['llm_semantic_feedback']:.2f}s")
 
-                combined_result = genai_engine.comprehensive_analyze(refined_text, historical_context)
-            except Exception as e:
-                logger.warning(f"⚠️ Combined LLM call failed: {e}. Falling back to multi-call.")
+        # ══════════════════════════════════════════════════════════════════════
+        # STAGE 5: HYBRID SCORING (DL 6-head with audio features)
+        # ══════════════════════════════════════════════════════════════════════
+        t_score = time.perf_counter()
+        try:
+            score_packet = self.scorer.calculate_score(
+                refined_text,
+                semantic_result.get("structured", {}),
+                llm_score,
+                transcript_confidence,
+                audio_features
+            )
+            scores = {
+                "overall_score": score_packet["overall_score"],
+                "source": score_packet.get("source", "dl_6head_v2"),
+                "details": score_packet.get("details", {}),
+            }
+        except Exception as e:
+            logger.warning(f"⚠️ Scoring fallback: {e}")
+            score_packet = {"overall_score": 6.0, "features": [0.5] * 10}
+            scores = {"overall_score": 6.0, "note": "Fallback scoring"}
 
-            if combined_result is not None:
-                # ── COMBINED PATH: unpack semantic + score from single JSON ──────
-                logger.info("✅ [Pipeline] Using combined single-LLM output.")
-                raw_semantic = combined_result.get("semantic", {})
-                llm_score = round(float(combined_result.get("scores", {}).get("llm_score", 6.0)), 1)
-
-                # Normalize semantic through SemanticService's normalization logic
-                try:
-                    semantic_result = self.semantic.analyze(refined_text, raw_text=raw_text,
-                                                            precomputed_genai=raw_semantic)
-                except Exception as e:
-                    logger.warning(f"⚠️ Semantic normalization failed: {e}")
-                    semantic_result = {
-                        "intent": {"detected": [], "confidence": 0.0},
-                        "structured": raw_semantic,
-                        "confidence_map": {},
-                        "evidence_map": {}
-                    }
-
-                # ── TWO-PASS FEEDBACK WITH RAG CONTEXT ───────────────────────
-                # Instead of using the raw combined feedback directly, run the
-                # proper two-pass system which injects RAG historical context
-                # into the structure extraction (not just filtering).
-                try:
-                    feedback = self.feedback_service.generate(
-                        user_id=user_id,
-                        transcript=refined_text,
-                        semantic=semantic_result,
-                        scores={"overall_score": llm_score},
-                        fillers=[],
-                        english_level=english_lvl
-                    )
-                except Exception as e:
-                    logger.warning(f"⚠️ Two-pass feedback failed, using combined fallback: {e}")
-                    raw_feedback = combined_result.get("feedback", {})
-                    raw_positives = raw_feedback.get("positives", [])
-                    raw_improvements = raw_feedback.get("improvements", [])
-                    if len(raw_positives) < 4:
-                        raw_positives += ["Good effort overall."] * (4 - len(raw_positives))
-                    if len(raw_improvements) < 4:
-                        raw_improvements += ["Continue practicing to deepen your responses."] * (4 - len(raw_improvements))
-                    feedback = {
-                        "positives": raw_positives[:8],
-                        "improvements": raw_improvements[:8],
-                        "coaching_summary": raw_feedback.get("coaching_summary", "Good effort.")
-                    }
-
-            else:
-                # ── FALLBACK: original multi-call pipeline ────────────────────────
-                logger.info("⚠️ [Pipeline] Falling back to multi-call pipeline.")
-                try:
-                    semantic_result = self.semantic.analyze(refined_text, raw_text=raw_text)
-                except Exception as e:
-                    logger.error(f"❌ Semantic GenAI failure: {e}")
-                    semantic_result = {
-                        "intent": {"detected": [], "confidence": 0.0},
-                        "structured": {},
-                        "confidence_map": {},
-                        "evidence_map": {}
-                    }
-                llm_score = None  # Will be calculated inside scorer
-
-                try:
-                    feedback = self.feedback_service.generate(
-                        user_id=user_id,
-                        transcript=refined_text,
-                        semantic=semantic_result,
-                        scores={"overall_score": 6.0},
-                        fillers=[],
-                        english_level=english_lvl
-                    )
-                except Exception as e:
-                    logger.error(f"❌ GenAI Feedback failure: {e}")
-                    feedback = {
-                        "positives": ["Feedback Generation failed."],
-                        "improvements": [],
-                        "coaching_summary": "Error"
-                    }
-
-            # ── STEP 5 (removed — no rule-based completeness) ────────────────────
-            completeness_issues = []
-
-            # ── STEP 6: FILLERS ──────────────────────────────────────────────────
-            try:
-                fillers = self.filler_service.detect(refined_text)
-            except Exception as e:
-                logger.error(f"❌ Filler detection failure: {e}")
-                fillers = []
-
-            # ── STEP 7: HYBRID SCORING ───────────────────────────────────────────
-            try:
-                score_packet = self.scorer.calculate_score(
-                    refined_text,
-                    semantic_result.get("structured", {}),
-                    precomputed_llm_score=llm_score  # Pass through if already computed
-                )
-                scores = {
-                    "overall_score": score_packet["overall_score"],
-                    "source": score_packet.get("source", "hybrid_70_30"),
-                    "details": score_packet.get("details", {})
-                }
-            except Exception as e:
-                logger.warning(f"⚠️ Scoring fallback: {e}")
-                score_packet = {"overall_score": 6.0, "features": [0.5] * 7}
-                scores = {"overall_score": 6.0, "note": "Fallback scoring used"}
-
-        # Guarantee score_packet always has a 'features' key (may be empty on combined path)
         if "features" not in score_packet:
             score_packet["features"] = []
 
-        # ── STEP 8: SQLITE TRACKING + ML RETRAINING ──────────────────────────
+        scores["confidence"] = confidence_label.lower()
+        timings["scoring"] = time.perf_counter() - t_score
+
+        # ══════════════════════════════════════════════════════════════════════
+        # STAGE 6: DATABASE TRACKING (async-safe)
+        # ══════════════════════════════════════════════════════════════════════
+        t_db = time.perf_counter()
         try:
-            user_name = semantic_result.get("structured", {}).get("name", "Unknown Evaluator")
+            user_name = semantic_result.get("structured", {}).get("name", "Unknown")
             db.upsert_user(user_id, user_name)
 
             db.store_attempt(
-                user_id=user_id,
-                transcript=refined_text,
+                user_id=user_id, transcript=refined_text,
                 semantic=semantic_result.get("structured", {}),
                 num_fillers=len(fillers) if fillers else 0,
                 score=scores["overall_score"],
@@ -302,34 +292,57 @@ class SpeechPipeline:
 
             historical_progress = db.get_user_progress(user_id)
 
-            dl_features = score_packet.get("features", []) if (not skip_llm and score_packet.get("features")) else []
+            dl_features = score_packet.get("features", []) if score_packet.get("features") else []
             if dl_features:
-                if dynamic_confidence >= 75.0 and scores["overall_score"] >= 7.0:
-                    logger.info("📈 [ML Ingest] Sample meets quality threshold (conf>=75, score>=7.0). Storing...")
+                word_count_check = len(refined_text.split())
+                noise_ratio = len(fillers) / max(1, word_count_check) if fillers else 0.0
+                if word_count_check >= 10 and dynamic_confidence >= 60.0 and noise_ratio <= 0.3:
+                    logger.info("📈 [ML] High-quality sample → storing for retraining")
                     rlhf_filter.validate_and_ingest(
-                        transcript=refined_text,
-                        score=scores["overall_score"],
-                        DL_features=dl_features
+                        transcript=refined_text, score=scores["overall_score"], DL_features=dl_features
                     )
                 else:
-                    logger.info("🚫 [ML Ingest] Sample quality too low for training. Discarded from ML dataset.")
+                    logger.info("🚫 [ML] Rejected from retraining due to safety limits.")
 
         except Exception as e:
-            logger.error(f"❌ [Database/ML Ingestion Error]: {e}")
+            logger.error(f"❌ [DB] Tracking error: {e}")
             historical_progress = {"error": "Tracking failed"}
 
-        # ── VRAM FLUSH ────────────────────────────────────────────────────────
+        timings["db_tracking"] = time.perf_counter() - t_db
+
+        # ── Light VRAM cleanup ───────────────────────
         model_manager.clear()
 
-        logger.info(f"[SEMANTIC]: {semantic_result.get('structured', {})}")
-        logger.info(f"[SCORES]: {scores}")
-        logger.info(f"[LLM_USED]: {llm_used} | [CONF]: {transcript_confidence:.2f}")
-        logger.info("========== PIPELINE END ==========")
+        # ── Cleanup temp files ───────────────────────
+        for temp_file in temp_files:
+            try:
+                if temp_file and os.path.exists(temp_file):
+                    os.remove(temp_file)
+                    logger.debug(f"🧹 Cleaned up temp file: {temp_file}")
+            except OSError:
+                pass
+
+        # ══════════════════════════════════════════════════════════════════════
+        # PERFORMANCE SUMMARY
+        # ══════════════════════════════════════════════════════════════════════
+        total_time = time.perf_counter() - t_pipeline_start
+        timings["total"] = total_time
+
+        logger.info(f"\n{'─'*50}")
+        logger.info(f"⏱️  PERFORMANCE REPORT ({_NUM_CORES} CPU + GPU)")
+        logger.info(f"{'─'*50}")
+        for stage, t in timings.items():
+            logger.info(f"   {stage:.<35} {t:.2f}s")
+        logger.info(f"{'─'*50}")
+        logger.info(f"   {'TOTAL':.<35} {total_time:.2f}s")
+        logger.info(f"{'─'*50}")
+        logger.info(f"   Score: {scores.get('overall_score')} | Source: {scores.get('source')} | LLM: {llm_used}")
+        logger.info(f"{'='*60}\n")
 
         result = {
             "user_id": user_id,
-            "raw_transcript": raw_text,         # Full — all segments joined
-            "refined_transcript": refined_text,  # Full — no truncation
+            "raw_transcript": raw_text,
+            "refined_transcript": refined_text,
             "semantic": semantic_result,
             "audio_features": audio_features,
             "audio_flags": audio_flags,
@@ -340,15 +353,12 @@ class SpeechPipeline:
             "historical_progress": historical_progress,
             "confidence": {
                 "transcript_confidence": round(transcript_confidence, 3),
-                "dynamic_confidence": dynamic_confidence,       # Numeric 0-100
-                "confidence_label": confidence_label,           # LOW / MEDIUM / HIGH
+                "dynamic_confidence": dynamic_confidence,
+                "confidence_label": confidence_label,
                 "llm_used": llm_used
             },
-            "english_level": english_lvl
+            "english_level": english_lvl,
+            "timings": timings
         }
-
-        # Cache result for repeated uploads
-        if audio_bytes is not None:
-            result_cache.set(audio_bytes, user_id, result)
 
         return result

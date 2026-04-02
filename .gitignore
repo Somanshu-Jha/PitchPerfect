@@ -100,3 +100,6 @@ logs/
 
 tmp/
 temp/
+
+backend/data/hf_cache/
+*.safetensors

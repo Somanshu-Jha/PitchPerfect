@@ -1,0 +1,4 @@
+  File "<string>", line 37
+    print(f'  \u2705 Full flow PASSED: verified={verified}, name={result[\
+          ^
+SyntaxError: unterminated string literal (detected at line 37)

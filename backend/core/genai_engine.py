@@ -14,6 +14,7 @@
 import json
 import random
 import logging
+import torch
 from backend.core.model_manager import model_manager
 
 logger = logging.getLogger(__name__)
@@ -73,15 +74,16 @@ class GenAIEngine:
                 "You are an elite interview evaluator. Analyze the transcript and semantic data. "
                 "Extract EXACTLY the key coaching points — what the candidate did well, and what they must improve.\n\n"
                 "RULES:\n"
-                "- Provide 4 to 8 strengths (positives). Each as a short topic phrase, not full sentences.\n"
-                "- Provide 4 to 8 improvement areas (weaknesses). Each as a short topic phrase, not full sentences.\n"
-                "- Do NOT contradict semantic data. If a field is extracted, do NOT say it is missing.\n"
-                "- Be specific and factual — reference exact content from the transcript.\n"
-                "- Do NOT hallucinate. Only include points directly supported by the transcript.\n\n"
+                "- Extract strengths (positives) and improvement areas (weaknesses).\n"
+                "- Do NOT use generic text like 'Good effort'. Provide precise linguistic or behavioral details.\n"
+                "- EVERY point MUST contain an 'evidence' string which is an EXACT VERBATIM QUOTE from the transcript proving the point.\n"
+                "- VERY IMPORTANT: Base everything on ACTUAL FACTS extracted from the transcript. Do NOT force a specific number of points.\n"
+                "- If you cannot find verbatim evidence in the transcript, DO NOT include the point.\n"
+                "- Do NOT hallucinate.\n\n"
                 "Return ONLY valid JSON:\n"
                 "{\n"
-                '  "strengths": ["<short topic 1>", "<short topic 2>", ..., "<short topic N>"],\n'
-                '  "weaknesses": ["<short topic 1>", "<short topic 2>", ..., "<short topic N>"]\n'
+                '  "strengths": [{"topic": "<short topic>", "evidence": "<exact quote from transcript>"}],\n'
+                '  "weaknesses": [{"topic": "<short topic>", "evidence": "<exact quote from transcript>"}]\n'
                 "}\n"
                 "No markdown. No text outside the JSON block."
             ),
@@ -92,19 +94,18 @@ class GenAIEngine:
                 "You are an interview coach. You are given a structured list of coaching points. "
                 "Your task is to write them as complete, natural coaching sentences.\n\n"
                 "CRITICAL RULES:\n"
+                "- Write professional coaching sentences.\n"
                 "- NEVER reuse sentence structure. Paraphrase completely each time.\n"
-                "- Use varied vocabulary: synonyms, different openings, different patterns.\n"
-                "- Each bullet must feel unique — as if written by a different person.\n"
+                "- You MUST retain the EXACT 'evidence' quote given to you. Do not change it.\n"
                 "- NEVER add new points not in the given structure list.\n"
-                "- NEVER remove any point from the given structure list.\n"
-                "- Adapt tone to the user's English level.\n\n"
+                "- NEVER remove any point from the given structure list.\n\n"
                 "Return ONLY valid JSON:\n"
                 "{\n"
-                '  "positives": ["full sentence 1", "full sentence 2", ...],\n'
-                '  "improvements": ["full sentence 1", "full sentence 2", ...],\n'
-                '  "coaching_summary": "One coherent paragraph summarizing their overall performance"\n'
+                '  "positives": [{"text": "full sentence", "evidence": "exact quote"}],\n'
+                '  "improvements": [{"text": "full sentence", "evidence": "exact quote"}],\n'
+                '  "coaching_summary": "One coherent paragraph summarizing performance"\n'
                 "}\n"
-                "No markdown. No text outside the JSON block."
+                "No markdown."
             ),
             "name_validation": (
                 "You are an AI assistant correcting Indian names extracted from speech transcripts. "
@@ -136,9 +137,8 @@ class GenAIEngine:
                 " \"experience\": [{\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"}],\n"
                 " \"career_goals\": {\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"}}\n"
                 "2. 'scores': {\"llm_score\": <float 1.0-10.0>} — evaluate clarity, completeness, structure, technical depth. BE CONSISTENT: same input = same score.\n"
-                "3. 'feedback': {\"positives\": [4-8 items], \"improvements\": [4-8 items], \"coaching_summary\": \"string\"}\n"
-                "FEEDBACK RULES: NEVER contradict extracted semantic fields. NEVER say a field is missing if it appears in semantic. "
-                "Provide 4-8 positives and 4-8 improvement points. "
+                "3. 'feedback': {\"positives\": [{\"text\": \"...\", \"evidence\": \"...\"}], \"improvements\": [{\"text\": \"...\", \"evidence\": \"...\"}], \"coaching_summary\": \"string\"}\n"
+                "FEEDBACK RULES: Base feedback ONLY on actual facts. Do not force point counts. EVERY positive/improvement must have an 'evidence' string which is an EXACT VERBATIM QUOTE from the transcript. If you cannot quote verbatim, DO NOT include the point. Do NOT use generic text.\n"
                 "CRITICAL: Return ONLY the top-level JSON object. No markdown, no extra text. Missing transcript fields: value=\"\", confidence=0.0."
             )
         }
@@ -226,15 +226,17 @@ class GenAIEngine:
 
         logger.info(f"⏳ [GenAIEngine] Generating inference for task: {task} (temp={temp:.2f}, do_sample={do_sample})...")
         try:
-            generated_ids = model.generate(
-                **model_inputs,
-                # comprehensive_analysis needs more tokens for 3-key JSON
-                max_new_tokens=1024 if task in ("comprehensive_analysis", "feedback_wording") else 768,
-                temperature=temp if do_sample else None,
-                do_sample=do_sample,
-                top_p=0.9 if do_sample else None,
-                repetition_penalty=1.2 if do_sample else 1.0
-            )
+            with torch.inference_mode():
+                generated_ids = model.generate(
+                    **model_inputs,
+                    # comprehensive_analysis needs more tokens for 3-key JSON
+                    max_new_tokens=850 if task in ("comprehensive_analysis", "feedback_wording") else 512,
+                    temperature=temp if do_sample else None,
+                    do_sample=do_sample,
+                    top_p=0.9 if do_sample else None,
+                    repetition_penalty=1.1 if do_sample else 1.0,
+                    pad_token_id=tokenizer.eos_token_id
+                )
             generated_ids = [
                 output_ids[len(input_ids):]
                 for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
@@ -331,21 +333,13 @@ class GenAIEngine:
             parsed = json.loads(raw)
             strengths = parsed.get("strengths", [])
             weaknesses = parsed.get("weaknesses", [])
-            # Enforce 4–8 range
-            if len(strengths) < 4:
-                strengths += ["Positive effort demonstrated"] * (4 - len(strengths))
-            if len(weaknesses) < 4:
-                weaknesses += ["Continue practicing to improve depth"] * (4 - len(weaknesses))
             return {
-                "strengths": strengths[:8],
-                "weaknesses": weaknesses[:8]
+                "strengths": strengths,
+                "weaknesses": weaknesses
             }
         except json.JSONDecodeError as e:
             logger.error(f"❌ [GenAIEngine] Feedback structure parse failed: {e}")
-            return {
-                "strengths": ["Good effort", "Clear communication", "Attempted the interview", "Showed confidence"],
-                "weaknesses": ["Expand your response", "Add more detail", "Improve structure", "Practice more"]
-            }
+            return {"strengths": [], "weaknesses": []}
 
     def generate_feedback_wording(
         self,
@@ -382,8 +376,8 @@ class GenAIEngine:
         except json.JSONDecodeError as e:
             logger.error(f"❌ [GenAIEngine] Feedback wording parse failed: {e}")
             return {
-                "positives": structure.get("strengths", ["Good effort."]),
-                "improvements": structure.get("weaknesses", ["Keep practicing."]),
+                "positives": [],
+                "improvements": [],
                 "coaching_summary": "Your performance showed promise. Continue developing your interview skills."
             }
 

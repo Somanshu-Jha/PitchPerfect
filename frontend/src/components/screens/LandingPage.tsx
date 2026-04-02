@@ -1,22 +1,20 @@
+import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, History, LogIn, UserPlus, LogOut } from 'lucide-react';
+import { Play, History, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useAuth } from '../../contexts/AuthContext';
 
-export default function LandingPage({ 
-  onStart, 
-  onHistory, 
-  onLogin, 
-  onSignup 
-}: { 
-  onStart: () => void, 
-  onHistory: () => void,
-  onLogin: () => void,
-  onSignup: () => void
-}) {
-  const { user, logout } = useAuth();
+export default function LandingPage({ onStart, onHistory, onUpload }: { onStart: () => void, onHistory: () => void, onUpload: (file: File) => void }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onUpload(file);
+      // Reset input so the same file can be re-selected if needed
+      e.target.value = '';
+    }
+  };
   return (
     <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xl">
       <Card className="glass p-12 flex flex-col items-center text-center space-y-10 rounded-[2rem] border-slate-800 shadow-2xl relative overflow-hidden">
@@ -26,37 +24,35 @@ export default function LandingPage({
           <div className="inline-flex px-4 py-1.5 rounded-full bg-slate-800/80 text-indigo-300 text-xs font-semibold uppercase tracking-widest mb-2 border border-slate-700 shadow-inner">Introlytics AI</div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white font-sans">Interview Evaluator</h1>
           <p className="text-slate-400 text-lg md:text-xl font-light max-w-[20rem] mx-auto leading-relaxed">Elevate your interview performance with high-precision AI analysis.</p>
-          
-          {user && (
-            <p className="text-indigo-300 text-sm font-medium mt-2">
-              Welcome back, {user.name}
-            </p>
-          )}
         </div>
 
-        <div className="flex flex-col sm:flex-row w-full gap-4 z-10 pt-6">
-          {user ? (
-            <>
-              <Button onClick={onStart} size="lg" className="flex-1 h-14 text-base font-semibold rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/20 border-0 transition-all">
-                <Play className="mr-2 h-5 w-5" /> Start Interview
-              </Button>
-              <Button onClick={onHistory} variant="secondary" size="lg" className="flex-1 h-14 text-base font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-inner transition-all">
-                <History className="mr-2 h-5 w-5 text-slate-400" /> View History
-              </Button>
-              <Button onClick={logout} variant="outline" size="lg" className="h-14 text-base font-semibold rounded-xl border-slate-700 text-slate-400 hover:text-white transition-all">
-                <LogOut className="h-5 w-5" />
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button onClick={onLogin} size="lg" className="flex-1 h-14 text-base font-semibold rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/20 border-0 transition-all">
-                <LogIn className="mr-2 h-5 w-5" /> Log In
-              </Button>
-              <Button onClick={onSignup} variant="secondary" size="lg" className="flex-1 h-14 text-base font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-inner transition-all">
-                <UserPlus className="mr-2 h-5 w-5 text-slate-400" /> Sign Up
-              </Button>
-            </>
-          )}
+        {/* Hidden file input for audio upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        <div className="flex flex-col w-full gap-4 z-10 pt-6">
+          <div className="flex flex-col sm:flex-row w-full gap-4">
+            <Button onClick={onStart} size="lg" className="flex-1 h-14 text-base font-semibold rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/20 border-0 transition-all">
+              <Play className="mr-2 h-5 w-5" /> Start Interview
+            </Button>
+            <Button onClick={onHistory} variant="secondary" size="lg" className="flex-1 h-14 text-base font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-inner transition-all">
+              <History className="mr-2 h-5 w-5 text-slate-400" /> View History
+            </Button>
+          </div>
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            variant="secondary"
+            size="lg"
+            className="w-full h-14 text-base font-semibold rounded-xl bg-slate-800/60 hover:bg-slate-700/80 text-slate-200 border border-dashed border-slate-600 hover:border-indigo-500 shadow-inner transition-all group"
+          >
+            <Upload className="mr-2 h-5 w-5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
+            Upload Audio File
+          </Button>
         </div>
       </Card>
     </motion.div>

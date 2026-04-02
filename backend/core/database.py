@@ -37,10 +37,17 @@ class DatabaseSystem:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                try:
-                    cursor.execute("ALTER TABLE Users ADD COLUMN password_hash TEXT DEFAULT NULL")
-                except Exception:
-                    pass
+
+                # Safe column migrations — each wrapped individually
+                migrations = [
+                    ("Users", "password_hash", "TEXT DEFAULT NULL"),
+                    ("Users", "email", "TEXT DEFAULT NULL"),
+                ]
+                for table, col, coltype in migrations:
+                    try:
+                        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+                    except Exception:
+                        pass  # Column already exists
                 
                 # Attempt Tracking (The heart of continuous analysis)
                 cursor.execute('''
@@ -74,33 +81,58 @@ class DatabaseSystem:
                     pass
         except Exception as e:
             logger.error(f"❌ [DatabaseSystem] SQLite Corrupted: {e}")
+            print(f"❌ [DatabaseSystem] SQLite schema error: {e}")
 
     def upsert_user(self, user_id: str, name: str, password_hash: str = None):
-        """Registers a user non-destructively."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            if password_hash:
-                cursor.execute('''
-                    INSERT INTO Users (user_id, name, password_hash)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET name=excluded.name, password_hash=excluded.password_hash
-                ''', (user_id, name, password_hash))
-            else:
-                cursor.execute('''
-                    INSERT INTO Users (user_id, name)
-                    VALUES (?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET name=excluded.name
-                ''', (user_id, name))
-            conn.commit()
+        """Registers a user non-destructively. Stores email = user_id."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                if password_hash:
+                    cursor.execute('''
+                        INSERT INTO Users (user_id, name, email, password_hash)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(user_id) DO UPDATE SET 
+                            name=excluded.name, 
+                            email=excluded.email,
+                            password_hash=excluded.password_hash
+                    ''', (user_id, name, user_id, password_hash))
+                else:
+                    cursor.execute('''
+                        INSERT INTO Users (user_id, name, email)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(user_id) DO UPDATE SET 
+                            name=excluded.name,
+                            email=excluded.email
+                    ''', (user_id, name, user_id))
+                conn.commit()
+                logger.info(f"✅ [DB] User upserted: {user_id}")
+        except Exception as e:
+            logger.error(f"❌ [DB] upsert_user failed: {e}")
+            print(f"❌ [DB] upsert_user CRASHED: {e}")
+            raise
 
     def get_user(self, user_id: str):
         """Fetches user details for authentication verification."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT user_id, name, password_hash FROM Users WHERE user_id = ?', (user_id,))
-            row = cursor.fetchone()
-            if row:
-                return {"user_id": row[0], "name": row[1], "password_hash": row[2]}
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT user_id, name, password_hash FROM Users WHERE user_id = ?', 
+                    (user_id,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        "user_id": row[0], 
+                        "name": row[1], 
+                        "password_hash": row[2],
+                        "email": row[0],  # user_id IS the email
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"❌ [DB] get_user failed for {user_id}: {e}")
+            print(f"❌ [DB] get_user CRASHED: {e}")
             return None
 
     def store_attempt(self, user_id: str, transcript: str, semantic: dict, num_fillers: int, score: float, feedback: dict, confidence: float = 0.0) -> int:
@@ -153,15 +185,15 @@ class DatabaseSystem:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
-            # Retrieve last 10 attempts
+            # Retrieve last 10 attempts (newest first, then reverse for chronological chart order)
             cursor.execute('''
                 SELECT timestamp, overall_score, num_fillers, flagged_as_improvement, confidence 
                 FROM Attempts 
                 WHERE user_id = ? 
-                ORDER BY timestamp ASC LIMIT 10
+                ORDER BY timestamp DESC LIMIT 10
             ''', (user_id,))
             
-            rows = cursor.fetchall()
+            rows = list(reversed(cursor.fetchall()))  # Reverse to chronological (oldest→newest)
             
             if not rows:
                 return {"user_id": user_id, "has_data": False}
