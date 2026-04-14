@@ -166,6 +166,10 @@ export default function RecorderSection({
             fd.append('resume', resumeFile, resumeFile.name);
         }
         fd.append('strictness', strictness);
+        
+        const userId = localStorage.getItem('auth_email') || 'local_demo';
+        fd.append('user_id', userId);
+
         console.log(`🔥 [RecorderSection] Sending POST to /student/evaluate (Mode: ${strictness})...`);
         const res = await fetch('http://127.0.0.1:8000/student/evaluate', {
           method: 'POST',

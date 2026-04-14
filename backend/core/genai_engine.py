@@ -427,7 +427,7 @@ class GenAIEngine:
             f"2. Generate EXACTLY 8-10 UNIQUE, specific, actionable improvement points.\n"
             f"3. Each point MUST reference specific content from the transcript, resume, or audio metrics.\n"
             f"4. NO generic advice. NO template sentences. Every point must feel uniquely human-written.\n"
-            f"5. For improvements, PREFIX each with a category tag: [RESUME GAP], [DELIVERY], [CONTENT DEPTH], [STRUCTURE], or [PROFESSIONAL POLISH]\n"
+            f"5. For BOTH positives AND improvements, PREFIX each point with a category tag: [RESUME GAP], [DELIVERY], [CONTENT DEPTH], [STRUCTURE], or [PROFESSIONAL POLISH]\n"
             f"6. Cross-reference resume against pitch: what was MATCHED and what was MISSED.\n"
             f"7. Notice EVERY minor detail: filler words, pace, tone, energy, pauses, pronunciation.\n"
             f"8. For each rubric dimension, provide a specific reasoning explaining the score.\n\n"
@@ -443,7 +443,7 @@ class GenAIEngine:
             f'"overall_score":0.0,\n'
             f'"score_deduction_reason":"Why candidate did not get 10/10",\n'
             f'"feedback":{{\n'
-            f'  "positives":["8-10 unique points with evidence"],\n'
+            f'  "positives":["8-10 unique points with [CATEGORY] tags and evidence"],\n'
             f'  "improvements":["8-10 unique points with [CATEGORY] tags"],\n'
             f'  "suggestions":["3-5 rewritten weak sentences"],\n'
             f'  "coaching_summary":"2-3 sentence holistic summary"\n'
@@ -545,7 +545,7 @@ class GenAIEngine:
             "- Reference SPECIFIC words/phrases from the transcript\n"
             "- If resume provided: explicitly name which projects/internships were/weren't mentioned\n"
             "- Comment on EVERY abnormal audio metric (low fluency, filler density, pace issues, energy drop)\n"
-            "- Each positive must cite evidence (quoted words, metric values, resume matches)\n"
+            "- Each positive must cite evidence (quoted words, metric values, resume matches) AND start with a category tag: [RESUME GAP], [DELIVERY], [CONTENT DEPTH], [STRUCTURE], or [PROFESSIONAL POLISH]\n"
             "- Each improvement MUST start with a category tag: [RESUME GAP], [DELIVERY], [CONTENT DEPTH], [STRUCTURE], or [PROFESSIONAL POLISH]\n"
             "- coaching_summary: 2-3 sentences summarizing overall impression as if spoken to the candidate face-to-face\n"
         )
@@ -587,7 +587,7 @@ class GenAIEngine:
         wpm = af.get("wpm_estimate", 140)
         if 120 <= wpm <= 160:
             positives.append(
-                f"Your speaking pace (~{int(wpm)} WPM) sits in the professional sweet spot of 120-160 WPM, "
+                f"[DELIVERY] Your speaking pace (~{int(wpm)} WPM) sits in the professional sweet spot of 120-160 WPM, "
                 f"allowing the interviewer to absorb each point while maintaining energy."
             )
         elif wpm < 100:
@@ -616,12 +616,12 @@ class GenAIEngine:
         pitch_range = af.get("pitch_range", 80)
         if tone_expr >= 0.65:
             positives.append(
-                f"Vocal expressiveness is strong ({tone_label}, {tone_expr:.2f}/1.0 with {pitch_range:.0f}Hz range). "
+                f"[DELIVERY] Vocal expressiveness is strong ({tone_label}, {tone_expr:.2f}/1.0 with {pitch_range:.0f}Hz range). "
                 f"Natural modulation keeps the listener engaged."
             )
         elif tone_expr >= 0.4:
             positives.append(
-                f"Voice carries {tone_label} expressiveness ({tone_expr:.2f}/1.0) — natural variation prevents monotony."
+                f"[DELIVERY] Voice carries {tone_label} expressiveness ({tone_expr:.2f}/1.0) — natural variation prevents monotony."
             )
             improvements.append(
                 f"[DELIVERY] While vocal tone is adequate ({tone_expr:.2f}/1.0), pushing toward more dynamic pitch "
@@ -642,7 +642,7 @@ class GenAIEngine:
         if fluency >= 0.7:
             filler_note = f" with only {filler_count} filler words" if filler_count <= 2 else ""
             positives.append(
-                f"Impressive speech fluency at {fluency:.2f}/1.0{filler_note}. "
+                f"[DELIVERY] Impressive speech fluency at {fluency:.2f}/1.0{filler_note}. "
                 f"Sentences flow with confident transitions, indicating thorough preparation."
             )
         elif fluency >= 0.45:
@@ -808,7 +808,7 @@ class GenAIEngine:
         projs_found = [kw for kw in proj_kws if kw in text_lower]
         if len(projs_found) >= 3:
             positives.append(
-                f"Project evidence convincingly presented — words like "
+                f"[CONTENT DEPTH] Project evidence convincingly presented — words like "
                 f"'{', '.join(projs_found[:3])}' show tangible achievements."
             )
         elif len(projs_found) >= 1:
@@ -827,7 +827,7 @@ class GenAIEngine:
         goals_found = [kw for kw in goal_kws if kw in text_lower]
         if len(goals_found) >= 2:
             positives.append(
-                f"Clear career direction articulated — shows maturity and intentionality."
+                f"[STRUCTURE] Clear career direction articulated — shows maturity and intentionality."
             )
         elif len(goals_found) == 0:
             improvements.append(
@@ -851,13 +851,13 @@ class GenAIEngine:
             )
         elif 80 <= word_count <= 200:
             positives.append(
-                f"Pitch length well-calibrated at {word_count} words — long enough for substance, "
+                f"[STRUCTURE] Pitch length well-calibrated at {word_count} words — long enough for substance, "
                 f"short enough for attention."
             )
 
         if vocab_ratio >= 0.65:
             positives.append(
-                f"Impressive vocabulary diversity ({vocab_ratio:.2f}) — varied language signals strong communication."
+                f"[PROFESSIONAL POLISH] Impressive vocabulary diversity ({vocab_ratio:.2f}) — varied language signals strong communication."
             )
         elif vocab_ratio < 0.40 and word_count > 30:
             improvements.append(
@@ -893,7 +893,7 @@ class GenAIEngine:
 
             if matched_skills:
                 positives.append(
-                    f"Resume-pitch alignment strong — actively referenced {', '.join(matched_skills[:5])} "
+                    f"[RESUME GAP] Resume-pitch alignment strong — actively referenced {', '.join(matched_skills[:5])} "
                     f"from your resume. Consistency signals genuine familiarity."
                 )
 
@@ -940,7 +940,7 @@ class GenAIEngine:
 
             if matched_skills:
                 positives.append(
-                    f"Resume-pitch alignment — you referenced {', '.join(matched_skills[:5])} from your resume."
+                    f"[RESUME GAP] Resume-pitch alignment — you referenced {', '.join(matched_skills[:5])} from your resume."
                 )
             if len(missed_skills) >= 3:
                 improvements.append(
@@ -954,22 +954,22 @@ class GenAIEngine:
         additional_pos = []
         if word_count > 20:
             additional_pos.append(
-                f"Delivered a substantive pitch of {word_count} words across "
+                f"[STRUCTURE] Delivered a substantive pitch of {word_count} words across "
                 f"{sentence_count} sentences — demonstrates interview preparation."
             )
         if af.get("speech_rate_stability", 0.5) >= 0.6:
             additional_pos.append(
-                f"Speech rhythm consistent ({af.get('speech_rate_stability', 0.5):.2f}/1.0 stability) — "
+                f"[DELIVERY] Speech rhythm consistent ({af.get('speech_rate_stability', 0.5):.2f}/1.0 stability) — "
                 f"no significant speed fluctuations."
             )
         if pronun >= 0.5 and fluency >= 0.5:
             additional_pos.append(
-                f"Solid fundamentals — pronunciation ({pronun:.2f}) + fluency ({fluency:.2f}) "
+                f"[DELIVERY] Solid fundamentals — pronunciation ({pronun:.2f}) + fluency ({fluency:.2f}) "
                 f"ensure message is communicated effectively."
             )
         if any(kw in text_lower for kw in ["intern", "experience", "worked", "company"]):
             additional_pos.append(
-                f"Referencing real-world experience adds professional credibility — "
+                f"[PROFESSIONAL POLISH] Referencing real-world experience adds professional credibility — "
                 f"positions you as someone who has applied knowledge practically."
             )
 
@@ -998,7 +998,7 @@ class GenAIEngine:
         # Final safety
         while len(positives) < 8:
             positives.append(
-                f"Engaging with this pitch exercise builds familiarity with articulating "
+                f"[CONTENT DEPTH] Engaging with this pitch exercise builds familiarity with articulating "
                 f"your professional story under interview pressure."
             )
             break
