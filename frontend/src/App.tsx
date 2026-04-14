@@ -7,6 +7,7 @@ import FeaturesSection from './components/FeaturesSection';
 import AboutSection from './components/AboutSection';
 import HistoryScreen from './components/screens/HistoryScreen';
 import { LoginPage } from './components/animated-characters-login-page';
+import DeveloperControls from './components/DeveloperControls';
 /**
  * App – single-page scroll application.
  * Fully functional without breaking logic.
@@ -18,6 +19,7 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [strictness, setStrictness] = useState('intermediate');
 
   // ── Persistent Login: Check token on app load ──
   useEffect(() => {
@@ -103,6 +105,7 @@ function App() {
           setResultData(data);
         }}
         onScrollToResults={scrollToResults}
+        strictness={strictness}
       />
 
       <div className="divider-subtle" />
@@ -118,6 +121,13 @@ function App() {
       <div className="divider-subtle" />
       <FeaturesSection onStartRecording={scrollToRecorder} />
       <AboutSection onStartRecording={scrollToRecorder} />
+
+      <div className="bg-slate-50/50 py-12 border-t border-slate-100">
+        <DeveloperControls 
+          currentStrictness={strictness}
+          onStrictnessChange={setStrictness}
+        />
+      </div>
 
       <footer className="bg-white border-t border-slate-100">
         {/* Main grid */}

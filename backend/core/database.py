@@ -10,6 +10,12 @@ class DatabaseSystem:
     """
     Central localized SQLite Database bridging historical metrics, 
     ML retraining datasets, and frontend user evaluation continuity tracking.
+
+    SIKHO: SQLite vs TinyDB (NoSQL)
+    Pehle humein lagta hai ki NoSQL/TinyDB simple json files me data save karte hain to easy hai.
+    Lekin limits kab aati hain? Job portal par 10k users apna data dalian to json file phat jati hai 
+    aur ram full ho jati hai. Isliye SQLite theek hai kyu k yeh structured Relational Database hai 
+    jis mein foreign keys hain, ye file size 140 TB tak handle kar leta hai smoothly!
     """
     
     def __init__(self):
@@ -23,7 +29,11 @@ class DatabaseSystem:
         return sqlite3.connect(self.db_path)
 
     def _initialize_schema(self):
-        """Builds necessary schema natively to track continuous learning goals."""
+        """
+        Builds necessary schema natively to track continuous learning goals.
+        Role: Architecture creator.
+        Logic: Is function mein SQL commands (DDL) likhe hain jo check karte hain ki tables already hain ya nai, agar nai to banate hain (CREATE TABLE IF NOT EXISTS).
+        """
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -70,6 +80,28 @@ class DatabaseSystem:
                     )
                 ''')
                 
+                # New Structured Table (Clean for UI & Export)
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS interview_attempts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id TEXT NOT NULL,
+                        transcript TEXT NOT NULL,
+                        overall_score REAL NOT NULL,
+                        grammar_score REAL NOT NULL,
+                        speaking_score REAL NOT NULL,
+                        content_score REAL NOT NULL,
+                        confidence_score REAL NOT NULL,
+                        processing_time REAL DEFAULT 0.0,
+                        strengths TEXT NOT NULL,
+                        weaknesses TEXT NOT NULL,
+                        suggestions TEXT NOT NULL,
+                        feedback_text TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        
+                        FOREIGN KEY (user_id) REFERENCES Users(user_id)
+                    )
+                ''')
+
                 conn.commit()
                 logger.info("✅ [DatabaseSystem] SQLite schema completely initialized.")
                 
@@ -135,21 +167,43 @@ class DatabaseSystem:
             print(f"❌ [DB] get_user CRASHED: {e}")
             return None
 
-    def store_attempt(self, user_id: str, transcript: str, semantic: dict, num_fillers: int, score: float, feedback: dict, confidence: float = 0.0) -> int:
-        """Stores the completely evaluated payload and compares it to the last payload for improvement validation."""
+    def store_attempt(self, user_id: str, transcript: str, semantic: dict, num_fillers: int, 
+                      score: float, feedback: dict, confidence: float = 0.0, processing_time: float = 0.0, 
+                      grammar_score: float = 0.0, speaking_score: float = 0.0, content_score: float = 0.0) -> int:
+        """
+        Stores the completely evaluated payload and compares it to the last payload for improvement validation.
+        Role: Engine jab candidate ko marks deta hai to is function ke zariye database me insert hote hain (Attempt Table me).
+        Logic: 'INSERT INTO' query chalata hai tables me record ko permanent karne kelye. JSON ko string me convert kark (json.dumps) SQL me bhejta hai.
+        """
         
         # 1. Automatic Progress Engine Logic
         improvement_flag = False
         last_score = self.get_latest_score(user_id)
+        
+        # Normalization as requested
+        score = round(min(max(score, 0), 10), 2)
+        grammar_score = round(min(max(grammar_score, 0), 10), 2)
+        speaking_score = round(min(max(speaking_score, 0), 10), 2)
+        content_score = round(min(max(content_score, 0), 10), 2)
+        confidence_score = round(min(max(confidence, 0), 100), 2)
+        processing_time = round(processing_time, 2)
         
         if last_score is not None:
             if score > last_score:
                 improvement_flag = True
                 logger.info(f"📈 [DatabaseSystem] Improvement detected for {user_id}: {last_score} -> {score}")
 
+        # Extract strict JSON fields for feedback formatting
+        strengths = json.dumps(feedback.get("positives", []))
+        weaknesses = json.dumps(feedback.get("improvements", []))
+        suggestions = json.dumps(feedback.get("suggestions", []))
+        feedback_text = feedback.get("coaching_summary", "")
+
         # 2. Schema Persistence
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            
+            # Old schema insertion (keep ML pipeline unbroken)
             cursor.execute('''
                 INSERT INTO Attempts (user_id, transcript, semantic_json, num_fillers, overall_score, feedback_json, flagged_as_improvement, confidence)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -163,8 +217,21 @@ class DatabaseSystem:
                 improvement_flag,
                 confidence
             ))
-            
             attempt_id = cursor.lastrowid
+            
+            # New schema insertion
+            cursor.execute('''
+                INSERT INTO interview_attempts (
+                    user_id, transcript, overall_score, grammar_score, speaking_score, 
+                    content_score, confidence_score, processing_time, strengths, 
+                    weaknesses, suggestions, feedback_text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                user_id, transcript, score, grammar_score, speaking_score, 
+                content_score, confidence_score, processing_time, strengths, 
+                weaknesses, suggestions, feedback_text
+            ))
+            
             conn.commit()
             return attempt_id
 
@@ -181,7 +248,11 @@ class DatabaseSystem:
             return result[0] if result else None
 
     def get_user_progress(self, user_id: str) -> dict:
-        """Fully integrated API analytics wrapper computing user growth trajectories across history."""
+        """
+        Fully integrated API analytics wrapper computing user growth trajectories across history.
+        Role: Ye tracker function UI graph k lye backend maths solve karta hai (ki bacha improve karraha hai ya nahi).
+        Logic: Pichlay 10 attempts nikal kar chronlogical order me karta hai (older -> newer), phr pehle aur akhri k darmiyan difference nikalta hai delta karke.
+        """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             

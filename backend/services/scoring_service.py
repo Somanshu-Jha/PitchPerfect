@@ -4,17 +4,20 @@
 # Uses a PyTorch Multi-Head DL model targeting 6 scores:
 # [clarity, confidence, structure, tone, fluency, overall_score]
 #
-# Feature Vector (10 dimensions):
-#   [0] completeness      - section coverage (0-1)
-#   [1] asr_confidence     - transcript reliability (0-1)
-#   [2] length_norm        - response length / 150 words (0-1)
-#   [3] diversity          - unique/total words (0-1)
-#   [4] filler_ratio       - filler count / total words (0+)
-#   [5] rag_improvement    - historical progress flag (0-1)
-#   [6] coherence          - speech stability (0-1)
-#   [7] tone_expressiveness - pitch range metric (0-1)
-#   [8] fluency_score      - pause+rhythm composite (0-1)
-#   [9] pronunciation      - spectral clarity (0-1)
+# Feature Vector (AI kya-kya dekhta hai score dene se pehle):
+#   [0] completeness      - Kya saare sections cover hain?
+#   [1] asr_confidence     - AI kitna sure hai ki words sahi transcribe hue hain.
+#   [2] length_norm        - Response ki lambai (agar 150 words hai toh 1.0).
+#   [3] diversity          - Vocabulary range.
+#   [4] filler_ratio       - 'Um, Ah' kitne hain. Jyada filler = Kam score.
+#   [5] rag_improvement    - Pichli baar se behtar kiya ya nahi.
+#   [6] coherence          - Bolne ka flow.
+#   [7] tone_expressiveness - Voice modulation.
+#   [8] fluency_score      - Bina ruke bolna.
+#   [9] pronunciation      - Clarity.
+#
+# Logic: Agar [0] (completeness) 0 hai, toh final score kabhi 10/10 nahi ho sakta.
+# Content is KING! 👑
 #
 # CALIBRATION PHILOSOPHY:
 #   - A good interview intro covers name, education, skills, experience, goals
@@ -36,7 +39,9 @@ _MAX_SCORE = 10.0
 _FILLER_WORDS = {"um", "uh", "like", "basically", "actually", "you know",
                  "so", "well", "i mean", "right", "okay", "ok", "matlab"}
 
-# Interview-relevant vocabulary for content relevance scoring
+# Interview-relevant vocabulary: AI in keywords ko dhoondta hai 🔎
+# Agar "Name" section mein student ne "I am" kaha, toh 1 checkmark mil jayega.
+# Jitne jyada checkmarks, utna behtar score.
 _INTERVIEW_VOCAB = {
     "name_intro": {"my name", "i am", "i'm", "myself", "introduce", "hello", "hi", "good morning", "good afternoon"},
     "education": {"university", "college", "degree", "student", "b.tech", "btech", "engineering", "institute",
@@ -74,11 +79,13 @@ def _compute_content_relevance(text: str) -> tuple:
             total_keyword_matches += category_matches
 
     category_hits = len(matching_categories)
+    category_coverage = category_hits / len(_INTERVIEW_VOCAB)
+    keyword_density = min(1.0, total_keyword_matches / 10.0)
 
-    # Relevance = combination of category coverage and keyword density
-    category_coverage = category_hits / len(_INTERVIEW_VOCAB)  # 0-1
-    keyword_density = min(1.0, total_keyword_matches / max(10, total_words * 0.3))  # 0-1
-
+    # Relevance Calculation:
+    # 0.7 Coverage (70% weight): Matlab aapne kitne categories cover kiye (Name, Skills, etc).
+    # 0.3 Density (30% weight): Matlab kitne keywords use kiye.
+    # Agar 0.7 ko 0.9 kar doge, toh density ki importance kam ho jayegi.
     relevance_score = category_coverage * 0.7 + keyword_density * 0.3
 
     return relevance_score, category_hits, matching_categories

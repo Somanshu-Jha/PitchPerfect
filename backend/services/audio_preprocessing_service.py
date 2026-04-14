@@ -27,6 +27,10 @@ class AudioPreprocessingService:
 
     def process(self, input_path: str, output_path: str) -> tuple[str, dict]:
         """
+        Role: Audio Cleaner.
+        Logic: Jab bacha bolta hai to uski awaz me pankhay ka shor (noise) ya volume kam-zyada ho sakti hai. 
+        Ye file Whisper (ASR) ke pas jaane se pehle har awaz ko "Standard Studio" quality me set krti hai.
+        
         Returns: (output_path, audio_flags)
         audio_flags: {'clipping': bool, 'distorted': bool, 'low_energy': bool}
         
@@ -40,10 +44,10 @@ class AudioPreprocessingService:
         temp_wav = f"{input_path}_{unique_id}_converted.wav"
         
         try:
-            # Gentler filter chain: wider frequency range preserves more speech detail
-            # highpass=60 (vs 80): captures lower male voice fundamentals
-            # lowpass=8000 (vs 7500): preserves sibilant consonants for clarity
-            # afftdn=nf=-30 (vs -25): lighter noise reduction to avoid speech distortion
+            # SIKHO (Frequencies & Deep Learning Info):
+            # 'highpass=60': 60Hz se neechy ki awazein (jaise dewar ke pechay truck guzrana) nikal deta hai. Male awaz 85Hz se shuru hoti hai.
+            # 'lowpass=8000': 8000Hz k upper awaz kat deta hai kyu k sibilants (s aur sh sounds) cover hojati hn idhr.
+            # 'afftdn=nf=-30': Ye ek intelligent noise filter hai jo background hissaying sound kam karta hai. (-30 mtlb moderate noise cancel).
             subprocess.run([
                 "ffmpeg", "-y", "-i", input_path,
                 "-af", "highpass=f=60,lowpass=f=8000,afftdn=nf=-30",
@@ -71,33 +75,47 @@ class AudioPreprocessingService:
                     pass
 
         # ── AUDIO EDGE DETECTION ──────────────────────────────────────────────────
+        # SIKHO (Clipping): Audio Volume -1 se 1 ke darmian hoti hai. Agar awaz 1.0 boundary ko hit karey iska 
+        # matlab mic "phat" gaya hai. (Peak > 0.98 signifies this). Ai phir isko minus marks deti hy confidence may.
         peak = float(np.max(np.abs(y))) if len(y) > 0 else 0.0
         if peak >= 0.98:
             audio_flags["clipping"] = True
             print(f"⚠️ [AudioFlags] Clipping detected (peak={peak:.3f}).")
 
+        # ZCR (Zero Crossing Rate) = Awaz ki frequency kitni tezi se positive-to-negative me jaa rahi hai.
+        # High ZCR ka matlab mechanical noise ya background shor boht tez hai.
         zcr = float(np.mean(librosa.feature.zero_crossing_rate(y)))
         if zcr > 0.35:
             audio_flags["distorted"] = True
             print(f"⚠️ [AudioFlags] High ZCR detected ({zcr:.3f}) — possible distortion.")
 
+        # SIKHO (RMS Energy): Root Mean Square audio ki 'Energy' ya loudness ko measure karta hai.
+        # Agar RMS boht kam (< 0.01) hai matlab bacha khamosh betha hai ya bht slowly fussfussa raha hai.
         rms = float(np.sqrt(np.mean(y ** 2))) if len(y) > 0 else 0.0
         if rms < 0.01:
             audio_flags["low_energy"] = True
             print(f"⚠️ [AudioFlags] Low energy audio detected (rms={rms:.4f}).")
 
         # ── NORMALIZATION ─────────────────────────────────────────────────────────
+        # librosa.util.normalize(y) math operations karke highest volume point ko 1.0 (Maximum) pe set kardeta hai,
+        # baqi sab bhi ussi proportion se badh jatay hn. AI ko clean sunehne kelye.
         y = librosa.util.normalize(y)
         
-        # DC offset removal
+        # DC offset removal: Shruuat ka initial background shor (pehle 1000 pieces of noise) sub me se Minus krdo!
         noise = np.mean(y[:1000]) if len(y) >= 1000 else 0.0
         y = y - noise
         
-        # Trim leading and trailing silence
+        # SIKHO (Decibels - dB limits): 
+        # Yeh shru aur akhri ka completely khamosh (Silence) hissa trim kardeta hai. 
+        # top_db=25 matlab reference volume level k -25dB se neeche wala sab trim. 
+        # Agar 10 kardo, tou normal words bhi trim hjynge (Cut jayenge).
         y, _ = librosa.effects.trim(y, top_db=25)
         
-        # Moderate volume boost (1.15x vs 1.3x for consistency)
+        # SIKHO (Volume Boost): Output awaz ko 15% (1.15x) boost krdo ta k clear ho. 
+        # Agar 2.0x (200%) krdenge tou clip hoky kaan faad awaz auegi.
         y = y * 1.15
+        
+        # np.clip sure kerta hai k multiplier se agar awaz 1.0 (Max Limit) exceed kargayi tou usey wapis boundary me lock kry.
         y = np.clip(y, -1.0, 1.0)
 
         # Write to the output path provided by caller

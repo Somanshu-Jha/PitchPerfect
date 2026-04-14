@@ -5,6 +5,8 @@ from sentence_transformers import SentenceTransformer
 class FeatureBuilder:
 
     def __init__(self):
+        # SIKHO (Embedder Architecture): 'SentenceTransformer' text ko asool(math) se 384 numbers(vectors) me tod deta hai.
+        # "all-MiniLM-L6-v2": Ye 6 layer ka small model hai, fast CPU pr easily 50ms me kam karta hai. 
         self.embedder = SentenceTransformer(
             "all-MiniLM-L6-v2",
             device="cpu"
@@ -19,6 +21,8 @@ class FeatureBuilder:
         completeness
     ):
         # ---------------- EMBEDDING ----------------
+        # SIKHO: Text ko numbers ki ek line(384 dimensions ki array) me convert karna 'Encoding' kehlata hai.
+        # Agar text hoga "I am good", array bnegi [0.12, -0.45, 0.99...]
         embedding = self.embedder.encode(text)
 
         # ---------------- SEMANTIC VECTOR ----------------
@@ -51,6 +55,10 @@ class FeatureBuilder:
             0 if completeness.get("missing_goals") else 1
         ])
 
+        # SIKHO (Neural Network Inputs): 
+        # Deep learning model texts/strings nahi samjhte, wo bs eik lambi see list of floats (1D Array) dekhte hain.
+        # Yahan hum Embedding(384) + Semantic(5) + Audio(3) + Filler(2) + Completeness(5) ko jod kar
+        # Total Shape = 399 numbers ka ek single vector / array bana k forward karte hain.
         return np.concatenate([
             embedding,
             semantic_vector,

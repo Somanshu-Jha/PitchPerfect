@@ -1209,6 +1209,450 @@
                 }
             ],
             "overall_score": 6.0
+        },
+        {
+            "id": 74,
+            "user_id": "local_demo",
+            "transcript": "Good morning, everyone. My name is Aakash Kumar. I study in Chandigarh University. Currently, I'm doing my B. Tech here. I'm very passionate about cricket, uh, Python and all, and I want to excel my career as a DRDO scientist. But currently, I'm in my studies phase, and I want to achieve new heights in your company.",
+            "improvements": [
+                {
+                    "text": "Your response could be more detailed. Consider adding specifics about your projects, achievements, or what makes you unique.",
+                    "evidence": "Word count: 57"
+                },
+                {
+                    "text": "Your speech has noticeable hesitations and 0 long pauses. Practice your introduction until you can deliver it without extended breaks.",
+                    "evidence": "Fluency score: 0.39, Long pauses: 0"
+                },
+                {
+                    "text": "Your pronunciation could be clearer. Focus on enunciating each syllable \u2014 especially consonants \u2014 and practice tongue twisters to improve articulation.",
+                    "evidence": "Pronunciation score: 0.34"
+                },
+                {
+                    "text": "Your voice energy drops towards the end of your introduction. Your closing is as important as your opening \u2014 maintain strong energy throughout, especially in your final statement.",
+                    "evidence": "Energy trajectory: fading"
+                },
+                {
+                    "text": "Your English is solid. To reach the next level, practice using more professional vocabulary and complex sentence structures in your introduction.",
+                    "evidence": "System Analysis: Intermediate Level"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 75,
+            "user_id": "local_demo",
+            "transcript": "Good morning, everyone. My name is Aakash Kumar. I study in Chandigarh University. Currently, I'm doing my B. Tech here. I'm very passionate about cricket, uh, Python and all, and I want to excel my career as a DRDO scientist. But currently, I'm in my studies phase, and I want to achieve new heights in your company.",
+            "improvements": [
+                {
+                    "text": "Your response could be more detailed. Consider adding specifics about your projects, achievements, or what makes you unique.",
+                    "evidence": "Word count: 57"
+                },
+                {
+                    "text": "Your speech has noticeable hesitations and 0 long pauses. Practice your introduction until you can deliver it without extended breaks.",
+                    "evidence": "Fluency score: 0.39, Long pauses: 0"
+                },
+                {
+                    "text": "Your pronunciation could be clearer. Focus on enunciating each syllable \u2014 especially consonants \u2014 and practice tongue twisters to improve articulation.",
+                    "evidence": "Pronunciation score: 0.34"
+                },
+                {
+                    "text": "Your voice energy drops towards the end of your introduction. Your closing is as important as your opening \u2014 maintain strong energy throughout, especially in your final statement.",
+                    "evidence": "Energy trajectory: fading"
+                },
+                {
+                    "text": "Your English is solid. To reach the next level, practice using more professional vocabulary and complex sentence structures in your introduction.",
+                    "evidence": "System Analysis: Intermediate Level"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 76,
+            "user_id": "local_demo",
+            "transcript": "Good morning everyone, my name is Kumar. I am currently pursuing my B. Tech degree in Chandigarh University.",
+            "improvements": [
+                {
+                    "text": "Sharing a specific project or role you've held demonstrates that you can apply your skills in practice \u2014 this is a critical gap in your current introduction.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Stating where you see yourself professionally shows ambition and direction \u2014 interviewers want to know you have a plan, not just skills.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Technical skills are the backbone of any tech interview \u2014 without naming them, the interviewer has to guess what you can actually do.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your response is quite short. A complete self-introduction should be 60-90 seconds (roughly 100-180 words). Expand on your background, skills, and goals.",
+                    "evidence": "Word count: 18"
+                },
+                {
+                    "text": "Your speech has noticeable hesitations and 0 long pauses. Practice your introduction until you can deliver it without extended breaks.",
+                    "evidence": "Fluency score: 0.31, Long pauses: 0"
+                },
+                {
+                    "text": "Your pronunciation could be clearer. Focus on enunciating each syllable \u2014 especially consonants \u2014 and practice tongue twisters to improve articulation.",
+                    "evidence": "Pronunciation score: 0.17"
+                },
+                {
+                    "text": "Your voice energy drops towards the end of your introduction. Your closing is as important as your opening \u2014 maintain strong energy throughout, especially in your final statement.",
+                    "evidence": "Energy trajectory: fading"
+                },
+                {
+                    "text": "Your English is solid. To reach the next level, practice using more professional vocabulary and complex sentence structures in your introduction.",
+                    "evidence": "System Analysis: Intermediate Level"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 77,
+            "user_id": "local_demo",
+            "transcript": "Good morning, everyone. My name is Aakash Kumar. I study in Chandigarh University. Currently, I'm doing my B. Tech here. I'm very passionate about cricket, uh, Python and all, and I want to excel my career as a DRDO scientist. But currently, I'm in my studies phase, and I want to achieve new heights in your company.",
+            "improvements": [
+                {
+                    "text": "Your response could be more detailed. Consider adding specifics about your projects, achievements, or what makes you unique.",
+                    "evidence": "Word count: 57"
+                },
+                {
+                    "text": "Your speech has noticeable hesitations and 0 long pauses. Practice your introduction until you can deliver it without extended breaks.",
+                    "evidence": "Fluency score: 0.39, Long pauses: 0"
+                },
+                {
+                    "text": "Your pronunciation could be clearer. Focus on enunciating each syllable \u2014 especially consonants \u2014 and practice tongue twisters to improve articulation.",
+                    "evidence": "Pronunciation score: 0.34"
+                },
+                {
+                    "text": "Your voice energy drops towards the end of your introduction. Your closing is as important as your opening \u2014 maintain strong energy throughout, especially in your final statement.",
+                    "evidence": "Energy trajectory: fading"
+                },
+                {
+                    "text": "Your English is solid. To reach the next level, practice using more professional vocabulary and complex sentence structures in your introduction.",
+                    "evidence": "System Analysis: Intermediate Level"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 78,
+            "user_id": "local_demo",
+            "transcript": "Good morning, everyone. My name is Akash Kumar. I belong from Bihar. I'm currently doing my. Tech in Chandigarh University, and I'm very passionate about ML and blockchain technologies. And currently I'm making some projects using that.",
+            "improvements": [
+                {
+                    "text": "Your introduction would feel more purposeful if you shared what you aim to achieve in your career \u2014 even a one-sentence goal makes a big difference.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your response could be more detailed. Make sure to adding specifics about your projects, achievements, or what makes you unique.",
+                    "evidence": "Word count: 37"
+                },
+                {
+                    "text": "Your speech has noticeable hesitations and 0 long pauses. Practice your introduction until you can deliver it without extended breaks.",
+                    "evidence": "Fluency score: 0.39, Long pauses: 0"
+                },
+                {
+                    "text": "Your pronunciation could be clearer. Focus on enunciating each syllable \u2014 especially consonants \u2014 and practice tongue twisters to improve articulation.",
+                    "evidence": "Pronunciation score: 0.29"
+                },
+                {
+                    "text": "Your voice energy drops towards the end of your introduction. Your closing is as important as your opening \u2014 maintain strong energy throughout, especially in your final statement.",
+                    "evidence": "Energy trajectory: fading"
+                },
+                {
+                    "text": "Your English is solid. To reach the next level, practice using more professional vocabulary and complex sentence structures in your introduction.",
+                    "evidence": "System Analysis: Intermediate Level"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 79,
+            "user_id": "local_demo",
+            "transcript": "Hello everyone, I am Shobhanshu and currently I am studying in Chandigarh University pursuing. Tech. My aim is to become AI and I am good in Python including Docker and Kubernetes and also I want to implement all the concepts in the future. Currently I am working as intern in Microsoft as the post of AI engineer and we can also contribute to TensorFlow library as open source. That's all, thank you.",
+            "improvements": [
+                {
+                    "text": "Your speech has noticeable hesitations and 1 long pauses. Practice your introduction until you can deliver it without extended breaks.",
+                    "evidence": "Fluency score: 0.36, Long pauses: 1"
+                },
+                {
+                    "text": "Your voice energy drops towards the end of your introduction. Your closing is as important as your opening \u2014 maintain strong energy throughout, especially in your final statement.",
+                    "evidence": "Energy trajectory: fading"
+                },
+                {
+                    "text": "Your English is solid. To reach the next level, practice using more professional vocabulary and complex sentence structures in your introduction.",
+                    "evidence": "System Analysis: Intermediate Level"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 80,
+            "user_id": "local_demo",
+            "transcript": "Good afternoon, my name is Shawn I am currently a first -year BTEC student in Artificial Intelligence and Machine Learning at Chandigarh University. I have developed skills in communication, teamwork, and basic programming, along with strong problem -solving abilities. Through my academic exposure and participation in activities, I am gaining experience in working collaboratively and adapting in new challenges. My strengths include being disciplined, a quick learner, and highly adaptable. And I am known for maintaining a positive and confident attitude. I have a keen interest in AI, technology, and continuous learning. My career goal is to build a strong foundation in AI and contribute to innovative solutions in the tech industry. I believe I can add value through my dedication, consistency, and willingness to learn. I look forward to growing, contributing in many ways. Thank you.",
+            "improvements": [
+                {
+                    "text": "Try expanding more on your technical depth and unique experiences to further captivate the interviewer.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Try adding a memorable closing statement that summarizes why you're the ideal candidate.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Practice this introduction 5-10 times until it feels natural and effortless.",
+                    "evidence": "General Advice"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 81,
+            "user_id": "local_demo",
+            "transcript": "Hello, my name is I'm studying Tech in AIML. I'm interested in technology and want to do something good in future. I have such as teamwork. Communication is okay. I'm looking forward to working with the team that is exploring AI. Thank you.",
+            "improvements": [
+                {
+                    "text": "Sharing a specific project or role you've held demonstrates that you can apply your skills in practice \u2014 this is a critical gap in your current introduction.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your response could be more detailed. Make sure to adding specifics about your projects, achievements, or what makes you unique.",
+                    "evidence": "Word count: 43"
+                },
+                {
+                    "text": "Your pronunciation could be clearer. Focus on enunciating each syllable \u2014 especially consonants \u2014 and practice tongue twisters to improve articulation.",
+                    "evidence": "Pronunciation score: 0.44"
+                },
+                {
+                    "text": "Your voice energy drops towards the end of your introduction. Your closing is as important as your opening \u2014 maintain strong energy throughout, especially in your final statement.",
+                    "evidence": "Energy trajectory: fading"
+                },
+                {
+                    "text": "Your English is solid. To reach the next level, practice using more professional vocabulary and complex sentence structures in your introduction.",
+                    "evidence": "System Analysis: Intermediate Level"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 82,
+            "user_id": "local_demo",
+            "transcript": "Good afternoon, my name is Shawn I am currently a first -year BTEC student in Artificial Intelligence and Machine Learning at Chandigarh University. I have developed skills in communication, teamwork, and basic programming, along with strong problem -solving abilities. Through my academic exposure and participation in activities, I am gaining experience in working collaboratively and adapting in new challenges. My strengths include being disciplined, a quick learner, and highly adaptable. And I am known for maintaining a positive and confident attitude. I have a keen interest in AI, technology, and continuous learning. My career goal is to build a strong foundation in AI and contribute to innovative solutions in the tech industry. I believe I can add value through my dedication, consistency, and willingness to learn. I look forward to growing, contributing in many ways. Thank you.",
+            "improvements": [
+                {
+                    "text": "Try expanding more on your technical depth and unique experiences to further captivate the interviewer.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Try adding a memorable closing statement that summarizes why you're the ideal candidate.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Practice this introduction 5-10 times until it feels natural and effortless.",
+                    "evidence": "General Advice"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 83,
+            "user_id": "test",
+            "transcript": "Hello, my name is Mahatma, I am in the Indian University, and my goal is to prepare and do the things that are special.",
+            "improvements": [
+                {
+                    "text": "Sharing a specific project or role you've held demonstrates that you can apply your skills in practice \u2014 this is a critical gap in your current introduction.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Technical skills are the backbone of any tech interview \u2014 without naming them, the interviewer has to guess what you can actually do.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your response is quite short. A complete self-introduction should be 60-90 seconds (roughly 100-180 words). Expand on your background, skills, and goals.",
+                    "evidence": "Word count: 24"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 84,
+            "user_id": "test",
+            "transcript": "Hello, my name is Mahatma, I am in the Indian University, and my goal is to prepare and do the things that are special.",
+            "improvements": [
+                {
+                    "text": "Sharing a specific project or role you've held demonstrates that you can apply your skills in practice \u2014 this is a critical gap in your current introduction.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Naming specific tools, languages, or frameworks you know gives the interviewer concrete evidence of your technical capabilities.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your response is quite short. A complete self-introduction should be 60-90 seconds (roughly 100-180 words). Expand on your background, skills, and goals.",
+                    "evidence": "Word count: 24"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 85,
+            "user_id": "test",
+            "transcript": "Hello, my name is Mahatma, I am in the Indian University, and my goal is to prepare and do the things that are special.",
+            "improvements": [
+                {
+                    "text": "Sharing a specific project or role you've held demonstrates that you can apply your skills in practice \u2014 this is a critical gap in your current introduction.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Naming specific tools, languages, or frameworks you know gives the interviewer concrete evidence of your technical capabilities.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your response is quite short. A complete self-introduction should be 60-90 seconds (roughly 100-180 words). Expand on your background, skills, and goals.",
+                    "evidence": "Word count: 24"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 86,
+            "user_id": "local_demo",
+            "transcript": "Good afternoon, my name is Shawn I am currently a first -year BTEC student in Artificial Intelligence and Machine Learning at Chandigarh University. I have developed skills in communication, teamwork, and basic programming, along with strong problem -solving abilities. Through my academic exposure and participation in activities, I am gaining experience in working collaboratively and adapting in new challenges. My strengths include being disciplined, a quick learner, and highly adaptable. And I am known for maintaining a positive and confident attitude. I have a keen interest in AI, technology, and continuous learning. My career goal is to build a strong foundation in AI and contribute to innovative solutions in the tech industry. I believe I can add value through my dedication, consistency, and willingness to learn. I look forward to growing, contributing in many ways. Thank you.",
+            "improvements": [
+                {
+                    "text": "Try expanding more on your technical depth and unique experiences to further captivate the interviewer.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Try adding a memorable closing statement that summarizes why you're the ideal candidate.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Practice this introduction 5-10 times until it feels natural and effortless.",
+                    "evidence": "General Advice"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 87,
+            "user_id": "local_demo",
+            "transcript": "Good afternoon, my name is Shawn I am currently a first -year BTEC student in Artificial Intelligence and Machine Learning at Chandigarh University. I have developed skills in communication, teamwork, and basic programming, along with strong problem -solving abilities. Through my academic exposure and participation in activities, I am gaining experience in working collaboratively and adapting in new challenges. My strengths include being disciplined, a quick learner, and highly adaptable. And I am known for maintaining a positive and confident attitude. I have a keen interest in AI, technology, and continuous learning. My career goal is to build a strong foundation in AI and contribute to innovative solutions in the tech industry. I believe I can add value through my dedication, consistency, and willingness to learn. I look forward to growing, contributing in many ways. Thank you.",
+            "improvements": [
+                {
+                    "text": "Broaden your technical knowledge and personal anecdotes to make your candidacy stand out.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Craft a powerful conclusion that encapsulates your value proposition.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Master this presentation by repeating it multiple times for comfort and fluency.",
+                    "evidence": "General Advice"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 88,
+            "user_id": "test",
+            "transcript": "Audio processing failed or transcript empty.",
+            "improvements": [
+                {
+                    "text": "Adding your educational details (university, degree, year) gives the interviewer context about your training and specialization.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Sharing a specific project or role you've held demonstrates that you can apply your skills in practice \u2014 this is a critical gap in your current introduction.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Stating where you see yourself professionally shows ambition and direction \u2014 interviewers want to know you have a plan, not just skills.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Always begin by stating your full name \u2014 it's the simplest way to establish your identity and create a personal connection.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your response is far too short to constitute an interview introduction. A minimum of 60-90 seconds (100-180 words) is expected. You need to cover your name, education, skills, experience, and career goals.",
+                    "evidence": "Word count: 6"
+                },
+                {
+                    "text": "Your voice sounds monotone. Varying your overview \u2014 especially when making key points \u2014 will make you sound more dynamic and engaging.",
+                    "evidence": "Tone expressiveness: 0.27"
+                },
+                {
+                    "text": "Your speech has noticeable hesitations and 0 long pauses. Practice your introduction until you can deliver it without extended breaks.",
+                    "evidence": "Fluency score: 0.40, Long pauses: 0"
+                },
+                {
+                    "text": "Your pronunciation could be clearer. Focus on enunciating each syllable \u2014 especially consonants \u2014 and practice tongue twisters to improve articulation.",
+                    "evidence": "Pronunciation score: 0.00"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 89,
+            "user_id": "local_demo",
+            "transcript": "Good afternoon, my name is Shawn I am currently a first -year BTEC student in Artificial Intelligence and Machine Learning at Chandigarh University. I have developed skills in communication, teamwork, and basic programming, along with strong problem -solving abilities. Through my academic exposure and participation in activities, I am gaining experience in working collaboratively and adapting in new challenges. My strengths include being disciplined, a quick learner, and highly adaptable. And I am known for maintaining a positive and confident attitude. I have a keen interest in AI, technology, and continuous learning. My career goal is to build a strong foundation in AI and contribute to innovative solutions in the tech industry. I believe I can add value through my dedication, consistency, and willingness to learn. I look forward to growing, contributing in many ways. Thank you.",
+            "improvements": [
+                {
+                    "text": "Expand on your specific achievements and contributions to showcase your value to potential employers.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Conclude your speech with a powerful statement that emphasizes why you stand out as a candidate.",
+                    "evidence": "General Advice"
+                },
+                {
+                    "text": "Continue to refine your delivery for consistency and impact.",
+                    "evidence": "General Advice"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 90,
+            "user_id": "bench3",
+            "transcript": "Hello, my name is Mahatma, I am in the Indian University, and my goal is to prepare and do the things that are special.",
+            "improvements": [
+                {
+                    "text": "Sharing a specific project or role you've held demonstrates that you can apply your skills in practice \u2014 this is a critical gap in your current introduction.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Technical skills are the backbone of any tech interview \u2014 without naming them, the interviewer has to guess what you can actually do.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your response is quite short. A complete self-introduction should be 60-90 seconds (roughly 100-180 words). Expand on your background, skills, and goals.",
+                    "evidence": "Word count: 24"
+                }
+            ],
+            "overall_score": 6.0
+        },
+        {
+            "id": 91,
+            "user_id": "local_demo",
+            "transcript": "Good afternoon. My name is, Sherry. I am a first year BTech student in, um, artificial intelligence and, machine learning at Chandigarh University. Uh, I have, uh, good communication skills and, uh, enjoy working in, uh, teams. I'm a quick learner and always, uh, stay positive while, uh, facing new challenges. I am interested in, in AI, artificial intelligence uh, want to build a successful career, um, in this field. Uh, I am eager to learn and, um, and grow through, uh, new opportunities.",
+            "improvements": [
+                {
+                    "text": "Sharing a specific project or role you've held demonstrates that you can apply your skills in practice \u2014 this is a critical gap in your current introduction.",
+                    "evidence": "Not detected in transcript"
+                },
+                {
+                    "text": "Your pronunciation could be clearer. Focus on enunciating each syllable \u2014 especially consonants \u2014 and practice tongue twisters to improve articulation.",
+                    "evidence": "Pronunciation score: 0.45"
+                },
+                {
+                    "text": "You used 12 filler words (uh, um). Replace these with confident pauses \u2014 silence between sentences sounds much more professional than 'um' or 'uh'.",
+                    "evidence": "um uh uh uh uh..."
+                }
+            ],
+            "overall_score": 6.0
         }
     ]
 }

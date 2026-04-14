@@ -37,6 +37,10 @@ for item in data:
     X.append(features)
     y.append(target)
 
+# SIKHO (Random Forest & Multi-Labeling): 
+# 'RandomForestClassifier' bahut saaray chotay-chotay Decison Trees ka majmoa(group) hai.
+# Yahan MultiOutput lga hai jis ka mtlb feedback me siraf 1 bemari nahi, balky multiple bemariyan 
+# pakri ja sakti hyn ek sth (For example: Missing Name AND Missing Degree dono ek sath True asakte hyn uski English dekh kr).
 model = MultiOutputClassifier(RandomForestClassifier())
 model.fit(X, y)
 

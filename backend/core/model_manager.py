@@ -106,35 +106,78 @@ class ModelManager:
             logger.info(f"✅ [ModelManager] Embedder loaded in {time.perf_counter()-t:.1f}s")
         return self.active_models["embedder"]
 
-    def load_llm(self, model_id: str = "Qwen/Qwen2.5-3B-Instruct"):
+    def load_llm(self, model_id: str = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"):
         """Loads LLM via 4-bit BitsAndBytes quantization. Cached permanently."""
         if "llm" not in self.active_models:
             import time
             t = time.perf_counter()
-            logger.info(f"💾 [ModelManager] Loading {model_id} → GPU (4-bit BnB)...")
+            logger.info(f"💾 [ModelManager] Loading {model_id} → GPU/CPU (4-bit BnB)...")
             try:
                 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
+                # SIKHO: 'Quantization' (Model ko Pichkana).
+                # 14 Billion ka model RAM me 28GB space khayega (float16).
+                # `load_in_4bit`: Isko 28GB se 7GB mein pichka do. 
+                # `bnb_4bit_compute_dtype`: Par math operations 16-bit me karo taki dimag weak na ho.
+                # `llm_int8_enable_fp32_cpu_offload`: Agar thoda sa data bach jaye, usko CPU RAM (LaptopRAM) mein shift kar do GPU se.
                 quantization_config = BitsAndBytesConfig(
                     load_in_4bit=True,
                     bnb_4bit_compute_dtype=torch.float16,
                     bnb_4bit_use_double_quant=True,
                     bnb_4bit_quant_type="nf4",
+                    llm_int8_enable_fp32_cpu_offload=True
                 )
 
                 tokenizer = AutoTokenizer.from_pretrained(model_id)
+                
+                # Cap GPU based on actual free VRAM (leave 1.5GiB buffer) and CPU RAM at 85%
+                # SIKHO: Memory Management. CPU vs GPU Allocation.
+                # `safe_vram_gb`: Agar GPU ke paas 12 GB RAM(RTX 5070 Ti) hai, to 1.5GB OS/Display kelye chorh do. Phir baqi sara(e.g., 10GB) Model ko de do!
+                import psutil
+                if torch.cuda.is_available():
+                    free_vram, _ = torch.cuda.mem_get_info(0)
+                    safe_vram_gb = max(2, int((free_vram / (1024**3)) - 1.5))
+                    gpu_cap = f"{safe_vram_gb}GiB"
+                else:
+                    gpu_cap = "0GiB"
+                
+                memory_cap = {
+                    0: gpu_cap,
+                    "cpu": f"{int((psutil.virtual_memory().total / (1024**3)) * 0.85)}GiB"
+                }
+                
                 model = AutoModelForCausalLM.from_pretrained(
                     model_id,
                     quantization_config=quantization_config,
-                    device_map="auto"
+                    device_map="auto",
+                    max_memory=memory_cap
                 )
                 self.active_models["llm"] = {"tokenizer": tokenizer, "model": model}
-                logger.info(f"✅ [ModelManager] LLM loaded in {time.perf_counter()-t:.1f}s")
+                logger.info(f"✅ [ModelManager] LLM loaded in {time.perf_counter()-t:.1f}s with Memory Caps: {memory_cap}")
             except ImportError:
                 logger.error("❌ [ModelManager] bitsandbytes not installed!")
                 raise
 
         return self.active_models["llm"]
+
+    def check_ollama(self, model_id: str = "deepseek-r1:14b"):
+        """Checks if Ollama is running and has the required model."""
+        import requests
+        import time
+        t = time.perf_counter()
+        url = "http://127.0.0.1:11434/api/tags"
+        try:
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200:
+                models = [m["name"] for m in response.json().get("models", [])]
+                found = any(model_id in m for m in models)
+                status = "✅ detected" if found else "⚠️ running (model missing)"
+                logger.info(f"🧠 [ModelManager] Ollama {status} in {time.perf_counter()-t:.3f}s")
+                return {"status": "online", "model_found": found, "models": models}
+            return {"status": "error", "model_found": False}
+        except Exception:
+            logger.warning(f"❌ [ModelManager] Ollama OFFLINE (Could not connect to {url})")
+            return {"status": "offline", "model_found": False}
 
     # ── Preloading (called at startup) ──────────────────────────────────────
 
@@ -159,6 +202,9 @@ class ModelManager:
         except Exception as e:
             logger.error(f"❌ [Preload] Embedder failed: {e}")
 
+        # 3. Ollama Health Check (Right-Brain)
+        self.check_ollama()
+
         total = time.perf_counter() - t_start
         logger.info(f"✅ [ModelManager] Preloading complete in {total:.1f}s")
 
@@ -178,6 +224,9 @@ class ModelManager:
         """
         Light VRAM cleanup — clears fragmented memory WITHOUT unloading models.
         Safe to call between requests.
+        SIKHO: Memory Garbage Collection. 
+        Jaise hum laptop restart kark RAM saaf krte hyn, vaise hi `torch.cuda.empty_cache()`
+        bekar purani tensors ko flush kardeta hai bina models delete kiye! Model intact rehtay hn!
         """
         gc.collect()
         if torch.cuda.is_available():

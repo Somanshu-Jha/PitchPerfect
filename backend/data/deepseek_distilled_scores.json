@@ -1,0 +1,497 @@
+[
+  {
+    "text": "Hi I am Neha I am pursuing Electrical Engineering I did internship at TCS",
+    "scores": {
+      "clarity": 8.0,
+      "completeness": 6.0,
+      "structure": 8.0,
+      "confidence": 8.5,
+      "technical_depth": 4.0,
+      "overall": 6.5
+    }
+  },
+  {
+    "text": "My name is Gurpreet from Mumbai I am pursuing BSc IT I want to build scalable systems",
+    "scores": {
+      "clarity": 8.0,
+      "completeness": 7.5,
+      "structure": 8.0,
+      "confidence": 7.5,
+      "technical_depth": 6.5,
+      "overall": 7.0
+    }
+  },
+  {
+    "text": "Myself Sai Teja I am studying BSc IT I know Python you know",
+    "scores": {
+      "clarity": 7.0,
+      "completeness": 5.5,
+      "structure": 6.5,
+      "confidence": 6.0,
+      "technical_depth": 4.5,
+      "overall": 5.5
+    }
+  },
+  {
+    "text": "Hi I am Siddharth I completed Mechanical Engineering I worked with Deep Learning I did internship at HCL basically",
+    "scores": {
+      "clarity": 7.0,
+      "completeness": 6.5,
+      "structure": 6.0,
+      "confidence": 5.5,
+      "technical_depth": 5.0,
+      "overall": 6.0
+    }
+  },
+  {
+    "text": "I have skills in Machine Learning",
+    "scores": {
+      "clarity": 2.0,
+      "completeness": 2.0,
+      "structure": 2.0,
+      "confidence": 2.0,
+      "technical_depth": 2.0,
+      "overall": 2.0
+    }
+  },
+  {
+    "text": "myself yashraj i am studying bsc it i have skills in deep learning i worked at wipro",
+    "scores": {
+      "clarity": 7.0,
+      "completeness": 6.5,
+      "structure": 6.0,
+      "confidence": 7.0,
+      "technical_depth": 5.5,
+      "overall": 6.5
+    }
+  },
+  {
+    "text": "I worked with Python I worked at HCL basically",
+    "scores": {
+      "clarity": 4.5,
+      "completeness": 4.0,
+      "structure": 4.5,
+      "confidence": 4.0,
+      "technical_depth": 4.5,
+      "overall": 4.5
+    }
+  },
+  {
+    "text": "i am pursuing bca i did internship at hcl",
+    "scores": {
+      "clarity": 8.5,
+      "completeness": 6.0,
+      "structure": 7.5,
+      "confidence": 6.0,
+      "technical_depth": 5.0,
+      "overall": 6.0
+    }
+  },
+  {
+    "text": "I am studying BSc IT I have skills in Machine Learning I worked at HCL basically",
+    "scores": {
+      "clarity": 7.0,
+      "completeness": 6.0,
+      "structure": 5.0,
+      "confidence": 6.0,
+      "technical_depth": 5.0,
+      "overall": 6.0
+    }
+  },
+  {
+    "text": "Hi I am Myra I did internship at Infosys I want to contribute to AI research",
+    "scores": {
+      "clarity": 2.0,
+      "completeness": 2.0,
+      "structure": 2.0,
+      "confidence": 2.0,
+      "technical_depth": 2.0,
+      "overall": 2.0
+    }
+  },
+  {
+    "text": "my name is bhargav from chennai i am pursuing mechanical engineering i have skills in ai i worked at infosys my goal is to contribute to ai research",
+    "scores": {
+      "clarity": 5.0,
+      "completeness": 5.0,
+      "structure": 5.0,
+      "confidence": 5.0,
+      "technical_depth": 5.0,
+      "overall": 5.0
+    }
+  },
+  {
+    "text": "Hi I am Venkatesh I am pursuing BSc IT",
+    "scores": {
+      "clarity": 9.0,
+      "completeness": 4.0,
+      "structure": 7.0,
+      "confidence": 8.0,
+      "technical_depth": 3.0,
+      "overall": 6.0
+    }
+  },
+  {
+    "text": "I'm studying Mechanical Engineering I did internship at Infosys",
+    "scores": {
+      "clarity": 4.0,
+      "completeness": 3.0,
+      "structure": 4.0,
+      "confidence": 3.5,
+      "technical_depth": 2.0,
+      "overall": 3.0
+    }
+  },
+  {
+    "text": "I worked at Infosys",
+    "scores": {
+      "clarity": 5.0,
+      "completeness": 3.0,
+      "structure": 4.0,
+      "confidence": 5.0,
+      "technical_depth": 2.0,
+      "overall": 4.0
+    }
+  },
+  {
+    "text": "My name is Subramanian from Hyderabad I completed Electrical Engineering",
+    "scores": {
+      "clarity": 9.0,
+      "completeness": 7.0,
+      "structure": 7.5,
+      "confidence": 8.5,
+      "technical_depth": 6.0,
+      "overall": 7.5
+    }
+  },
+  {
+    "text": "i am ayesha from bangalore i am studying electrical engineering i know ai i worked at google india",
+    "scores": {
+      "clarity": 9.0,
+      "completeness": 8.5,
+      "structure": 8.0,
+      "confidence": 8.5,
+      "technical_depth": 7.0,
+      "overall": 8.0
+    }
+  },
+  {
+    "text": "Hi I am Akash I did internship at TCS",
+    "scores": {
+      "clarity": 2.0,
+      "completeness": 2.0,
+      "structure": 2.0,
+      "confidence": 2.0,
+      "technical_depth": 2.0,
+      "overall": 2.0
+    }
+  },
+  {
+    "text": "My name is Aadhya from Mumbai I am studying BSc IT I want to contribute to AI research you know",
+    "scores": {
+      "clarity": 5.0,
+      "completeness": 4.0,
+      "structure": 4.5,
+      "confidence": 5.0,
+      "technical_depth": 4.0,
+      "overall": 4.5
+    }
+  },
+  {
+    "text": "My name is Shivansh from Lucknow I worked with Python I did internship at Infosys",
+    "scores": {
+      "clarity": 3.0,
+      "completeness": 2.5,
+      "structure": 3.0,
+      "confidence": 4.0,
+      "technical_depth": 2.5,
+      "overall": 3.0
+    }
+  },
+  {
+    "text": "I am studying BSc IT I worked with Data Structures I did internship at Wipro",
+    "scores": {
+      "clarity": 5.0,
+      "completeness": 6.0,
+      "structure": 5.5,
+      "confidence": 5.0,
+      "technical_depth": 5.5,
+      "overall": 5.5
+    }
+  },
+  {
+    "text": "I'm studying Mechanical Engineering I know Python My goal is to contribute to AI research",
+    "scores": {
+      "clarity": 8.0,
+      "completeness": 6.0,
+      "structure": 5.0,
+      "confidence": 7.0,
+      "technical_depth": 4.0,
+      "overall": 6.0
+    }
+  },
+  {
+    "text": "uh I am studying BCA I know Deep Learning I did internship at Infosys I want to become an AI engineer",
+    "scores": {
+      "clarity": 7.5,
+      "completeness": 6.5,
+      "structure": 6.0,
+      "confidence": 7.0,
+      "technical_depth": 5.5,
+      "overall": 6.5
+    }
+  },
+  {
+    "text": "I am studying Mechanical Engineering I have skills in Deep Learning",
+    "scores": {
+      "clarity": 5.0,
+      "completeness": 4.0,
+      "structure": 4.0,
+      "confidence": 5.0,
+      "technical_depth": 4.0,
+      "overall": 4.5
+    }
+  },
+  {
+    "text": "uh Myself Neha I know Web Development I want to become an AI engineer",
+    "scores": {
+      "clarity": 8.0,
+      "completeness": 7.5,
+      "structure": 8.0,
+      "confidence": 7.0,
+      "technical_depth": 6.0,
+      "overall": 7.0
+    }
+  },
+  {
+    "text": "Hi I am Gurpreet I know Data Structures I worked at TCS My goal is to contribute to AI research basically",
+    "scores": {
+      "clarity": 3.0,
+      "completeness": 3.0,
+      "structure": 3.0,
+      "confidence": 4.0,
+      "technical_depth": 2.0,
+      "overall": 3.0
+    }
+  },
+  {
+    "text": "I completed Mechanical Engineering I have skills in Machine Learning you know",
+    "scores": {
+      "clarity": 5.0,
+      "completeness": 5.5,
+      "structure": 5.0,
+      "confidence": 4.5,
+      "technical_depth": 5.5,
+      "overall": 5.0
+    }
+  },
+  {
+    "text": "My name is Ananya from Delhi I am pursuing Mechanical Engineering",
+    "scores": {
+      "clarity": 9.0,
+      "completeness": 7.0,
+      "structure": 8.0,
+      "confidence": 7.5,
+      "technical_depth": 6.0,
+      "overall": 7.5
+    }
+  },
+  {
+    "text": "Hi I am Atharv you know",
+    "scores": {
+      "clarity": 8.5,
+      "completeness": 4.0,
+      "structure": 6.0,
+      "confidence": 5.5,
+      "technical_depth": 3.0,
+      "overall": 5.0
+    }
+  },
+  {
+    "text": "Myself Kunal I know AI I want to build scalable systems",
+    "scores": {
+      "clarity": 3.0,
+      "completeness": 2.0,
+      "structure": 2.0,
+      "confidence": 3.0,
+      "technical_depth": 4.0,
+      "overall": 3.0
+    }
+  },
+  {
+    "text": "I completed BCA I worked with Machine Learning I want to build scalable systems",
+    "scores": {
+      "clarity": 5.0,
+      "completeness": 5.0,
+      "structure": 5.0,
+      "confidence": 5.0,
+      "technical_depth": 5.0,
+      "overall": 5.0
+    }
+  },
+  {
+    "text": "uh I am pursuing BSc IT I know Machine Learning I want to work in a top company",
+    "scores": {
+      "clarity": 6.0,
+      "completeness": 5.5,
+      "structure": 5.0,
+      "confidence": 5.5,
+      "technical_depth": 4.0,
+      "overall": 5.0
+    }
+  },
+  {
+    "text": "I did internship at Infosys",
+    "scores": {
+      "clarity": 1.0,
+      "completeness": 1.0,
+      "structure": 1.0,
+      "confidence": 1.0,
+      "technical_depth": 1.0,
+      "overall": 1.0
+    }
+  },
+  {
+    "text": "myself Yashraj from Delhi I am pursuing BTech in Computer Science I did internship at TCS My goal is to build scalable systems",
+    "scores": {
+      "clarity": 8.0,
+      "completeness": 7.0,
+      "structure": 8.0,
+      "confidence": 7.5,
+      "technical_depth": 6.5,
+      "overall": 7.0
+    }
+  },
+  {
+    "text": "I am Faizan from Chennai I am studying BTech in Computer Science you know",
+    "scores": {
+      "clarity": 8.5,
+      "completeness": 7.0,
+      "structure": 7.5,
+      "confidence": 7.0,
+      "technical_depth": 6.5,
+      "overall": 7.0
+    }
+  },
+  {
+    "text": "Myself Lalita I am studying Electrical Engineering I have skills in Deep Learning I did internship at HCL basically",
+    "scores": {
+      "clarity": 6.5,
+      "completeness": 5.5,
+      "structure": 5.0,
+      "confidence": 5.5,
+      "technical_depth": 6.0,
+      "overall": 5.5
+    }
+  },
+  {
+    "text": "Hi I'm Harpreet I completed Electrical Engineering I have skills in Web Development I want to contribute to AI research",
+    "scores": {
+      "clarity": 7.5,
+      "completeness": 6.0,
+      "structure": 5.5,
+      "confidence": 6.5,
+      "technical_depth": 4.0,
+      "overall": 6.0
+    }
+  },
+  {
+    "text": "I am pursuing BCA I have skills in Python I worked at Wipro",
+    "scores": {
+      "clarity": 8.5,
+      "completeness": 7.0,
+      "structure": 8.0,
+      "confidence": 8.5,
+      "technical_depth": 6.5,
+      "overall": 7.5
+    }
+  },
+  {
+    "text": "uh I am Bhargav from Lucknow I completed BTech in Computer Science I did internship at Wipro I want to build scalable systems",
+    "scores": {
+      "clarity": 6.5,
+      "completeness": 5.0,
+      "structure": 5.5,
+      "confidence": 6.0,
+      "technical_depth": 4.0,
+      "overall": 5.5
+    }
+  },
+  {
+    "text": "My name is Subramanian from Mumbai I completed BTech in Computer Science I worked with Web Development I worked at Google India I want to become an AI engineer basically",
+    "scores": {
+      "clarity": 8.5,
+      "completeness": 6.0,
+      "structure": 7.5,
+      "confidence": 6.5,
+      "technical_depth": 5.0,
+      "overall": 6.0
+    }
+  },
+  {
+    "text": "I am Krishna from Lucknow I have skills in Web Development My goal is to contribute to AI research you know",
+    "scores": {
+      "clarity": 6.0,
+      "completeness": 5.5,
+      "structure": 5.0,
+      "confidence": 6.0,
+      "technical_depth": 5.0,
+      "overall": 5.5
+    }
+  },
+  {
+    "text": "My name is Chaitanya from Chennai I have skills in Web Development I did internship at HCL basically",
+    "scores": {
+      "clarity": 8.5,
+      "completeness": 6.0,
+      "structure": 8.0,
+      "confidence": 6.5,
+      "technical_depth": 5.0,
+      "overall": 6.5
+    }
+  },
+  {
+    "text": "Myself Kunal I'm studying BTech in Computer Science I worked with Web Development I worked at Wipro I want to work in a top company",
+    "scores": {
+      "clarity": 6.0,
+      "completeness": 7.0,
+      "structure": 5.0,
+      "confidence": 5.5,
+      "technical_depth": 4.0,
+      "overall": 5.5
+    }
+  },
+  {
+    "text": "I know Machine Learning I did internship at HCL My goal is to build scalable systems",
+    "scores": {
+      "clarity": 4.0,
+      "completeness": 3.0,
+      "structure": 4.0,
+      "confidence": 5.0,
+      "technical_depth": 3.0,
+      "overall": 3.5
+    }
+  },
+  {
+    "text": "I am Devansh from Bangalore I completed Electrical Engineering My goal is to contribute to AI research",
+    "scores": {
+      "clarity": 9.0,
+      "completeness": 6.0,
+      "structure": 7.0,
+      "confidence": 8.5,
+      "technical_depth": 4.0,
+      "overall": 7.0
+    }
+  },
+  {
+    "text": "hi i am krishna i completed mechanical engineering i worked at hcl",
+    "scores": {
+      "clarity": 8.0,
+      "completeness": 4.0,
+      "structure": 5.0,
+      "confidence": 7.0,
+      "technical_depth": 4.0,
+      "overall": 5.5
+    }
+  }
+]

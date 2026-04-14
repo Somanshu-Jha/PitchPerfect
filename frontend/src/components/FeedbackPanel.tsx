@@ -44,6 +44,7 @@ export default function FeedbackPanel({ feedback }: FeedbackPanelProps) {
   const lines = feedback.split('\n').map(line => line.trim()).filter(Boolean);
   const strengths = lines.filter(l => l.startsWith('✔')).map(l => l.replace('✔', '').trim());
   const improvements = lines.filter(l => l.startsWith('✦')).map(l => l.replace('✦', '').trim());
+  const otherLines = lines.filter(l => !l.startsWith('✔') && !l.startsWith('✦'));
 
   return (
     <div className="saas-card p-6 md:p-8 mt-6 animate-in fade-in slide-in-from-bottom-6 duration-500 delay-300 fill-mode-both">
@@ -102,10 +103,13 @@ export default function FeedbackPanel({ feedback }: FeedbackPanelProps) {
             </span>
           </div>
           <div className="bg-[#fef2f2] border border-[#fecaca] rounded-2xl p-5 grow shadow-sm">
-            {improvements.length > 0 ? (
+            {improvements.length > 0 || otherLines.length > 0 ? (
               <ul className="space-y-3">
                 {improvements.map((imp, i) => (
-                  <FeedbackItem key={i} text={imp} type="improvement" />
+                  <FeedbackItem key={`imp-${i}`} text={imp} type="improvement" />
+                ))}
+                {otherLines.map((msg, i) => (
+                  <FeedbackItem key={`msg-${i}`} text={msg} type="improvement" />
                 ))}
               </ul>
             ) : (

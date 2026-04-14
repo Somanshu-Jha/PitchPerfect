@@ -44,9 +44,14 @@ class AudioAnalysisService:
             return self._empty_result("Audio too short for analysis")
 
         # ═══════════════════════════════════════════════════════════════
-        # 1. SPEECH RATE & PACE
+        # 1. SPEECH RATE & PACE (Speaking Speed)
         # ═══════════════════════════════════════════════════════════════
-        words_estimate = len(y) / sr / 0.4  # ~0.4s per word average
+        # WPM (Words Per Minute): Ye batata hai ki aap kitna tez bol rahe hain.
+        # Rule: 
+        # - < 120: Slow (Bacha confuse ya darr raha hai).
+        # - 120 - 160: Perfect (Professional flow).
+        # - > 170: Bohot Tez (Interviewer ko samajh nahi aayega).
+        words_estimate = len(y) / sr / 0.4  
         speech_rate = words_estimate / max(0.1, duration)
         wpm_estimate = speech_rate * 60
 
@@ -110,8 +115,12 @@ class AudioAnalysisService:
             avg_pause_dur = 0
 
         # ═══════════════════════════════════════════════════════════════
-        # 4. PITCH / TONE ANALYSIS 
+        # 4. PITCH / TONE ANALYSIS (Voice Modulation)
         # ═══════════════════════════════════════════════════════════════
+        # Pitch: Awaaz ki frequency (Hz).
+        # Pitch Range: High aur Low ke beech ka difference.
+        # - Range < 30Hz: Monotone (Suni ankahi, bore karne wali awaaz).
+        # - Range > 80Hz: Expressive (Interviewer ka dhyan kheechne wali awaaz).
         pitch_track = librosa.yin(y, fmin=50, fmax=400, sr=sr)
         # Filter out unreliable frames (0 or extreme values)
         valid_pitch = pitch_track[(pitch_track > 50) & (pitch_track < 400)]
@@ -124,11 +133,9 @@ class AudioAnalysisService:
         else:
             pitch_mean, pitch_std, pitch_range, pitch_var = 150.0, 20.0, 50.0, 400.0
 
-        # Pitch variation normalized (0-1): higher = more expressive
+        # Pitch variation normalized (0-1)
         pitch_variation = min(1.0, pitch_var / 2000.0)
 
-        # Tone expressiveness: based on pitch range and standard deviation
-        # Monotone: pitch_range < 30Hz, Expressive: pitch_range > 80Hz
         tone_expressiveness = min(1.0, pitch_range / 150.0)
 
         if tone_expressiveness < 0.25:
@@ -248,34 +255,41 @@ class AudioAnalysisService:
             pronunciation_reasoning = "Excellent pronunciation — your words are clear, well-articulated, and easy to follow. This significantly enhances your professional impression."
 
         # Duration-based dampening: short audio gives less reliable analysis
-        # For recordings < 30s, dampen all composite scores proportionally
-        if duration < 30.0:
-            duration_factor = max(0.3, duration / 30.0)  # 0.3-1.0
+        # Only dampen the deeper metrics slightly rather than crushing them completely.
+        if duration < 15.0:
+            duration_factor = max(0.8, duration / 15.0)  # gentle penalty for extremely short answers
             tone_expressiveness *= duration_factor
             fluency_score *= duration_factor
-            pronunciation_score *= duration_factor
-            speech_rate_stability *= duration_factor
-            logger.info(f"⚠️ [AudioAnalysis] Duration dampening applied: {duration:.1f}s → factor={duration_factor:.2f}")
+            logger.info(f"⚠️ [AudioAnalysis] Gentle duration dampening applied: {duration:.1f}s")
 
         # ═══════════════════════════════════════════════════════════════
         # 9. DYNAMIC CONFIDENCE (multi-factor)
         # ═══════════════════════════════════════════════════════════════
+        # Recalibrate to ensure realistic, highly accurate confidence mapping
+        # 60% baseline + dynamic scaling based on strong active features
+        
         base_confidence = (
-            0.15 * speech_rate_stability +
-            0.15 * pause_control +
+            0.20 * speech_rate_stability +
+            0.20 * pause_control +
             0.15 * pitch_variation +
             0.15 * energy_consistency +
             0.15 * pronunciation_score +
-            0.15 * fluency_score +
-            0.10 * tone_expressiveness
-        ) * 100
+            0.10 * fluency_score +
+            0.05 * tone_expressiveness
+        )
+        
+        # Scale the 0.0 - 1.0 base into a robust 50-98 range for realistic scoring
+        dynamic_confidence = 50.0 + (base_confidence * 48.0)
+        
+        # Penalties for severe pace mismatch
+        if wpm_estimate > 180 or wpm_estimate < 90:
+            dynamic_confidence -= 5.0
+            
+        dynamic_confidence = max(0.0, min(100.0, dynamic_confidence))
 
-        # NO artificial scaling — use raw computed confidence
-        dynamic_confidence = max(0.0, min(100.0, base_confidence))
-
-        if dynamic_confidence < 40:
+        if dynamic_confidence < 65:
             confidence_label = "LOW"
-        elif dynamic_confidence < 75:
+        elif dynamic_confidence < 85:
             confidence_label = "MEDIUM"
         else:
             confidence_label = "HIGH"

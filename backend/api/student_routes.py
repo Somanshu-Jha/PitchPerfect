@@ -6,13 +6,15 @@ import asyncio
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.services.streaming_asr import StreamingASRService
-
 from backend.services.speech_pipeline import SpeechPipeline
 
+import logging
+logger = logging.getLogger(__name__)
 
-# -------------------- INIT --------------------
-router = APIRouter()
-pipeline = SpeechPipeline()
+
+# -------------------- INIT (App start hote hi ye cheezein banti hain) --------------------
+router = APIRouter() # Ye rasta batata hai (URL endpoints).
+pipeline = SpeechPipeline() # Ye humari main logic machine hai.
 streaming_asr_service = StreamingASRService()
 
 
@@ -34,44 +36,65 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @router.post("/evaluate")
-async def evaluate(request: Request, file: UploadFile = File(...), user_id: str = Form("local_demo")):
+async def evaluate(
+    request: Request, 
+    # file: Candidate ki voice recording.
+    file: UploadFile = File(...), 
+    # resume: Candidate ka PDF/Text data (Optional).
+    resume: UploadFile = File(None),
+    # user_id: Database mein save karne ke liye.
+    user_id: str = Form("local_demo"),
+    # strictness: Kitni sakhti se check karna hai (Set by Developer Panel).
+    strictness: str = Form("intermediate")
+):
+    # SIKHO: Yaha hum Universal strictness enforce kar rahe hain!
+    from backend.core.global_config import load_global_strictness
+    universal_strictness = load_global_strictness()
+    # Frontend jo marzi bheje, admin ki universal configuration override karegi
+    final_strictness = universal_strictness if universal_strictness else strictness
 
     import time as _time
     import uuid
     t_start = _time.perf_counter()
 
-    print("\n" + "=" * 60)
-    print("🔥 API HIT — /student/evaluate")
-    print(f"   ✅ Audio received: {getattr(file, 'filename', 'Unknown')}")
-    print(f"   ✅ Content-Type: {getattr(file, 'content_type', 'Unknown')}")
-    print(f"   ✅ User: {user_id}")
+    logger.info("=" * 60)
+    logger.info("API HIT -- /student/evaluate")
+    logger.info(f"   Audio received: {getattr(file, 'filename', 'Unknown')}")
+    if resume:
+        logger.info(f"   Resume received: {resume.filename}")
+    logger.info(f"   User: {user_id}")
 
     # Unique temp file path to prevent race conditions
     unique_id = uuid.uuid4().hex[:12]
-    file_path = f"temp_{unique_id}_{file.filename}"
+    audio_path = f"temp_{unique_id}_{file.filename}"
+    resume_path = None
+    
+    if resume:
+        resume_path = f"temp_res_{unique_id}_{resume.filename}"
+        with open(resume_path, "wb") as buffer:
+            shutil.copyfileobj(resume.file, buffer)
+        logger.info(f"   Resume saved to disk: {resume_path}")
 
     # Read bytes for deterministic seeding
     audio_bytes = await file.read()
-    print(f"   ✅ File size: {len(audio_bytes)} bytes")
+    logger.info(f"   File size: {len(audio_bytes)} bytes")
 
     if len(audio_bytes) == 0:
-        print("   ❌ EMPTY FILE RECEIVED — aborting")
+        logger.error("   EMPTY FILE RECEIVED -- aborting")
         return {"status": "error", "message": "Empty audio file received"}
 
-    with open(file_path, "wb") as buffer:
+    with open(audio_path, "wb") as buffer:
         buffer.write(audio_bytes)
 
-    print(f"   ✅ File saved to disk: {file_path}")
+    logger.info(f"   File saved to disk: {audio_path}")
 
-    # ── ASYNC EXECUTION with GLOBAL CRASH PROTECTION ────────────────────────
-    # No cache — pipeline is deterministic via audio-hash seeding
+    # ── ASYNC EXECUTION ──
+    # await pipeline.process: Matlab jab tak pipeline result na de, API wait karegi.
     try:
-        result = await pipeline.process(file_path, user_id, audio_bytes)
-        print(f"   ✅ Pipeline completed successfully")
+        result = await pipeline.process(audio_path, user_id, audio_bytes, resume_path=resume_path, strictness=final_strictness)
+        logger.info(f"   Pipeline completed under Strictness: {final_strictness.upper()}")
     except Exception as e:
-        print(f"   💥 CRITICAL PIPELINE ERROR: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"   CRITICAL PIPELINE ERROR: {e}", exc_info=True)
         result = {
             "user_id": user_id,
             "raw_transcript": "",
@@ -93,75 +116,53 @@ async def evaluate(request: Request, file: UploadFile = File(...), user_id: str 
             "english_level": "Beginner"
         }
 
-    # Cleanup temp file
+    # Cleanup temp files
     try:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+        if resume_path and os.path.exists(resume_path):
+            os.remove(resume_path)
     except Exception:
         pass
 
-    elapsed = _time.perf_counter() - t_start
-    print(f"   ⏱️ Total request time: {elapsed:.2f}s")
-    print(f"   ✅ Score: {result.get('scores', {}).get('overall_score', 'N/A')}")
-    print("=" * 60)
+    processing_time = _time.perf_counter() - t_start
+    result["processing_time"] = round(processing_time, 2)
+    
+    logger.info(f"   Final Result ready in {processing_time:.2f}s")
+    logger.info("=" * 60)
+    
+    return result
 
-    return {
-        "status": "success",
-        "payload": result
-    }
-
-
-# -------------------- NEW: PROGRESS TRACKING (SAFE ADD) --------------------
-from backend.core.database import db
-import json
 
 @router.get("/progress/{user_id}")
 async def get_progress(user_id: str):
-    """Returns user score trajectory and improvement analytics from SQLite."""
-    progress = db.get_user_progress(user_id)
-    return {"status": "success", "data": progress}
+    """
+    Returns historical progress for a user (Alias).
+    """
+    from backend.core.database import db
+    return db.get_user_progress(user_id)
 
 
 @router.get("/history/{user_id}")
 async def get_history(user_id: str, days: int = 30):
-    """Returns full attempt details for the last N days (default 30). Supports charts."""
-    try:
-        from datetime import datetime, timedelta
-        cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    """
+    Returns full historical attempts with feedback for a user.
+    Uses HistoryService for structured output with positives/improvements/suggestions.
+    """
+    from backend.services.history_service import HistoryService
+    history_svc = HistoryService()
+    return history_svc.get_user_history(user_id, days=days)
 
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT attempt_id, transcript, semantic_json, overall_score, 
-                       feedback_json, num_fillers, timestamp, flagged_as_improvement, confidence
-                FROM Attempts WHERE user_id = ? AND timestamp >= ?
-                ORDER BY timestamp DESC LIMIT 50
-            ''', (user_id, cutoff_date))
-            rows = cursor.fetchall()
 
-        attempts = []
-        for r in rows:
-            attempts.append({
-                "attempt_id": r[0],
-                "transcript": r[1],
-                "semantic": json.loads(r[2]) if r[2] else {},
-                "score": r[3],
-                "feedback": json.loads(r[4]) if r[4] else {},
-                "fillers": r[5],
-                "timestamp": r[6],
-                "improved": bool(r[7]),
-                "confidence": r[8]
-            })
+@router.get("/export/{user_id}")
+async def export_history(user_id: str):
+    """
+    Dummy CSV export endpoint to prevent 404 frontend crash.
+    """
+    return {"status": "ok", "message": "Export functionality coming soon!"}
 
-        return {"status": "success", "data": attempts, "period_days": days, "total": len(attempts)}
-    except Exception as e:
-        return {"status": "error", "message": str(e), "data": []}
 
-@router.delete("/history/{user_id}/{attempt_id}")
-async def delete_history_attempt(user_id: str, attempt_id: int):
-    """Deletes a specific attempt and visually updates the user trajectory."""
-    try:
-        db.delete_attempt(attempt_id)
-        return {"status": "success", "message": f"Attempt {attempt_id} deleted."}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+@router.get("/health")
+async def health_check():
+    """Simple check to see if API is alive."""
+    return {"status": "ok", "service": "Introlytics API"}

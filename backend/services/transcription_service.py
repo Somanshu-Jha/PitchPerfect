@@ -20,13 +20,8 @@ logger = logging.getLogger(__name__)
 
 class TranscriptionService:
     """
-    High-accuracy ASR service: Faster-Whisper-Large-v3 (GPU).
-    Model is loaded once and PERSISTED across requests.
-    
-    CPU is utilized for:
-      - Post-processing (duplicate removal, grammar cleanup)
-      - Word-level confidence validation
-      - Sentence reconstruction from word timestamps
+    🎙️ Transcription Service: Voice ko Text mein badalne wali machine.
+    Hum Whisper model use karte hain jo GPU par chalti hai.
     """
 
     def __init__(self):
@@ -54,18 +49,25 @@ class TranscriptionService:
         try:
             segments, info = whisper_model.transcribe(
                 audio_path,
-                beam_size=7,                           # Higher beam for accuracy
-                best_of=7,                             # More candidates for accuracy
+                # beam_size (7): AI kitne options check karega. 
+                # Jyada (10+) = Accuracy up lekin Speed slow. 100% accuracy ke liye 10+ rakhte hain.
+                beam_size=7,                           
+                best_of=7,                             
+                # temperature (0.0): Matlab AI 'To-the-point' rahega. 
+                # Agar 0.8 karoge toh creative/random ban jayega (galat words likhne lagega).
                 temperature=0.0,
-                vad_filter=True,
+                vad_filter=True, # Voice Activity Detection: Matlab sirf awaaz par dhyan dega, shor par nahi.
                 vad_parameters=dict(
-                    min_silence_duration_ms=300,       # Don't split on short pauses
-                    speech_pad_ms=200,                 # Pad speech segments
+                    min_silence_duration_ms=300,       
+                    speech_pad_ms=200,                 
                 ),
                 condition_on_previous_text=True,
-                word_timestamps=True,                  # Word-level confidence
-                no_speech_threshold=0.5,               # Stricter: filter hallucinated silence
-                log_prob_threshold=-0.8,               # Stricter: filter low confidence segments
+                word_timestamps=True,                  
+                # no_speech_threshold (0.5): 
+                # 0.5 ka matlab AI 50% sure hona chahiye ki yaha awaaz hai. 
+                # 0.9 karoge toh bohot hi kam words transcribe honge (safe mode).
+                no_speech_threshold=0.5,               
+                log_prob_threshold=-0.8,               
                 initial_prompt=(
                     "This is a self-introduction for a job interview. "
                     "The speaker may have an Indian accent. "
@@ -86,11 +88,13 @@ class TranscriptionService:
             for seg in seg_list:
                 if seg.words:
                     for word in seg.words:
-                        if word.probability >= 0.55:  # Keep words with >55% confidence
+                        # Confidence Thresholds:
+                        # 0.55 (55%): Isse upar waale words hum 'Safe' maante hain.
+                        if word.probability >= 0.55:  
                             high_conf_words.append(word.word)
-                        elif word.probability >= 0.35:  # Medium confidence — keep but flag
+                        elif word.probability >= 0.35:  # Thoda darr hai (Medium)
                             medium_conf_words.append((word.word, word.probability))
-                        else:
+                        else: # Ye badiya nahi hai, isliye drop kar rahe hain.
                             low_conf_words.append((word.word, word.probability))
                 else:
                     # Fallback: use full segment text if no word timestamps

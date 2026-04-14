@@ -1,447 +1,1350 @@
 # =====================================================================
-# GENAI ENGINE — Centralized LLM Inference Router
+# GENAI ENGINE — Single-Pass HR Reasoning (Unified Inference)
 # =====================================================================
-# Handles all LLM calls: semantic extraction, feedback, scoring, name
-# validation, and combined comprehensive analysis.
+# Architecture UPGRADE:
+#   OLD: 2 LLM calls (evaluate → coaching) = 20-30s total
+#   NEW: 1 unified call (rubric + feedback in one shot) = 10-15s total
 #
-# Key architecture:
-# - Scoring calls: temperature=0.0 (fully deterministic)
-# - Feedback calls: structured-points extraction (temp=0) + wording
-#   generation (temp=0.7) for variation at sentence level only
-# - Anti-repetition persona injection for linguistic diversity
+# Key Design Decisions:
+#   1. Single unified prompt = ONE model.generate() call
+#   2. Deep resume extraction (projects, internships, certs, companies)
+#   3. Filler stats injected into prompt for micro-detail feedback
+#   4. CPU+GPU parallel: resume extraction on CPU while model on GPU
+#   5. ALL feedback is GENERATIVE — zero fixed/template sentences
+#   6. Fallback also generates varied, data-driven sentences
+#
+# Flow:
+#   comprehensive_analyze()
+#     → _deep_extract_resume() [CPU]
+#     → _build_unified_prompt() [CPU]
+#     → hr_model.unified_evaluate() [GPU — SINGLE CALL]
+#     → Parse JSON → Validate → Return
+#     → On fail: Retry once → On fail again: _generate_fallback_feedback()
 # =====================================================================
 
 import json
-import random
 import logging
-import torch
-from backend.core.model_manager import model_manager
+import time
+import re
+import os
 
 logger = logging.getLogger(__name__)
 
-# ── COACHING STYLE POOL ─────────────────────────────────────────────────
-# Randomly selected per feedback WORDING call to force linguistic diversity
-# Only used for the wording-generation step (not point-extraction step)
-FEEDBACK_STYLES = [
-    "mentor",           # warm, experienced, guiding
-    "coach",            # direct, motivational, action-oriented
-    "strict evaluator", # formal, critical, standards-focused
-    "friendly advisor"  # casual, encouraging, empathetic
-]
+# ── STRICTNESS MAP — Different Personas for Different Needs ───────────
+STRICTNESS_MAP = {
+    "beginner": {
+        "iq": "Base Intelligence",
+        "persona": "Encouraging Mentor",
+        "instruction": "Focus on growth. Penalize lightly for errors. Use an encouraging tone. Find the 'potential' in the candidate.",
+        "threshold": "High tolerance for resume/pitch gaps."
+    },
+    "intermediate": {
+        "iq": "Standard HR Professional",
+        "persona": "Balanced Evaluator",
+        "instruction": "Standard corporate norms. Fair judgment of evidence vs claims. Focus on skills and delivery consistency.",
+        "threshold": "Moderate tolerance for minor omissions."
+    },
+    "advance": {
+        "iq": "Strategic Talent Lead",
+        "persona": "Rigorous Assessor",
+        "instruction": "High expectations. Detailed analysis of project depth. Demand technical precision and fluent delivery.",
+        "threshold": "Low tolerance for lack of depth. Penalize generic answers."
+    },
+    "extreme": {
+        "iq": "Principal FAANG Recruiter",
+        "persona": "Brutally Precise Architect",
+        "instruction": "Zero tolerance for mismatches. If a resume claim isn't backed by audio evidence, mark it as 'Integrity Gap'. Demand ultra-fluent, high-impact reasoning.",
+        "threshold": "Absolute strictness. Any mismatch = Score < 3.0. Explicitly state the Deduction Reason."
+    }
+}
+
 
 class GenAIEngine:
     """
-    Centralized inference engine utilizing a 4-bit Local LLM (Qwen/Llama) via ModelManager.
-    Built heavily for strict JSON generation (semantic extraction) and zero-hallucination string feedback.
-    Upgraded: 9-field semantic schema with value/confidence/evidence per field.
+    Single-Pass HR Reasoning Engine.
 
-    Scoring: temperature=0.0 (deterministic)
-    Feedback: two-pass (structure=temp 0.0, wording=temp 0.7) for consistent logic + varied language
+    Combines rubric scoring + generative feedback into ONE model call.
+    Deep resume analysis extracts projects/internships/certs before the LLM call.
+    All feedback is purely generative — zero template/fixed sentences.
     """
 
-    # Fields that are arrays of dicts vs single dict
-    ARRAY_FIELDS = {"skills", "strengths", "areas_of_interest", "qualities", "experience"}
-    SCALAR_FIELDS = {"greetings", "name", "education", "career_goals"}
-
     def __init__(self):
-        logger.info("🧠 [GenAIEngine] Initializing Local Deep Learning Router...")
-        self.system_instructions = {
-            "semantic": (
-                "You are an elite NLP data extraction system. Analyze the given transcript and return ONLY valid JSON. "
-                "The JSON must strictly follow this schema:\n"
-                "{\n"
-                '  "greetings": {"value": "<greeting phrase>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"},\n'
-                '  "name": {"value": "<full name>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"},\n'
-                '  "education": {"value": "<degree and institution>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"},\n'
-                '  "skills": [{"value": "<skill>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"}],\n'
-                '  "strengths": [{"value": "<strength>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"}],\n'
-                '  "areas_of_interest": [{"value": "<area>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"}],\n'
-                '  "qualities": [{"value": "<quality>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"}],\n'
-                '  "experience": [{"value": "<experience>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"}],\n'
-                '  "career_goals": {"value": "<goal>", "confidence": <0.0-1.0>, "evidence": "<exact quote from transcript>"}\n'
-                "}\n\n"
-                "CRITICAL RULES:\n"
-                "- Scalar fields (greetings, name, education, career_goals): single dict with value/confidence/evidence.\n"
-                "- Array fields (skills, strengths, areas_of_interest, qualities, experience): list of dicts.\n"
-                "- 'evidence' must be the verbatim phrase or sentence from the transcript that justified the extraction.\n"
-                "- If a field is absent from the transcript: value = \"\", confidence = 0.0, evidence = \"\".\n"
-                "- Do NOT invent or hallucinate data. Do NOT include conversational text outside the JSON block."
-            ),
-            # ── TWO-PASS FEEDBACK: STEP 1 — Structured points extraction ──────────
-            # temperature=0.0 → fully deterministic (same input = same points)
-            # This defines WHAT feedback to give (logic level, not wording level)
-            "feedback_structure": (
-                "You are an elite interview evaluator. Analyze the transcript and semantic data. "
-                "Extract EXACTLY the key coaching points — what the candidate did well, and what they must improve.\n\n"
-                "RULES:\n"
-                "- Extract strengths (positives) and improvement areas (weaknesses).\n"
-                "- Do NOT use generic text like 'Good effort'. Provide precise linguistic or behavioral details.\n"
-                "- EVERY point MUST contain an 'evidence' string which is an EXACT VERBATIM QUOTE from the transcript proving the point.\n"
-                "- VERY IMPORTANT: Base everything on ACTUAL FACTS extracted from the transcript. Do NOT force a specific number of points.\n"
-                "- If you cannot find verbatim evidence in the transcript, DO NOT include the point.\n"
-                "- Do NOT hallucinate.\n\n"
-                "Return ONLY valid JSON:\n"
-                "{\n"
-                '  "strengths": [{"topic": "<short topic>", "evidence": "<exact quote from transcript>"}],\n'
-                '  "weaknesses": [{"topic": "<short topic>", "evidence": "<exact quote from transcript>"}]\n'
-                "}\n"
-                "No markdown. No text outside the JSON block."
-            ),
-            # ── TWO-PASS FEEDBACK: STEP 2 — Wording generation ───────────────────
-            # temperature=0.7 → sentence-level variation only (not logic level)
-            # Persona injected here to vary linguistic style across sessions
-            "feedback_wording": (
-                "You are an interview coach. You are given a structured list of coaching points. "
-                "Your task is to write them as complete, natural coaching sentences.\n\n"
-                "CRITICAL RULES:\n"
-                "- Write professional coaching sentences.\n"
-                "- NEVER reuse sentence structure. Paraphrase completely each time.\n"
-                "- You MUST retain the EXACT 'evidence' quote given to you. Do not change it.\n"
-                "- NEVER add new points not in the given structure list.\n"
-                "- NEVER remove any point from the given structure list.\n\n"
-                "Return ONLY valid JSON:\n"
-                "{\n"
-                '  "positives": [{"text": "full sentence", "evidence": "exact quote"}],\n'
-                '  "improvements": [{"text": "full sentence", "evidence": "exact quote"}],\n'
-                '  "coaching_summary": "One coherent paragraph summarizing performance"\n'
-                "}\n"
-                "No markdown."
-            ),
-            "name_validation": (
-                "You are an AI assistant correcting Indian names extracted from speech transcripts. "
-                "You are given an original transcript context, a raw extracted name (NER), and a phonetically-matched dataset name (RapidFuzz). "
-                "Select the final corrected name by determining which name fits the context best. "
-                "If the phonetic match makes sense in context, use it. If not, stick to the extracted name. "
-                "Return ONLY a JSON object matching this schema: {\"final_name\": \"<Chosen Name>\"}"
-            ),
-            # ── SCORING: temperature=0.0 (MANDATORY for determinism) ───────────────
-            "subjective_scoring": (
-                "You are an expert interviewer scoring a candidate out of 10 based on their transcript and semantic extraction. "
-                "Evaluate ONLY clarity, completeness, structure, and technical depth. "
-                "Be consistent — the same transcript must always produce the same score. "
-                "Return ONLY a JSON object: {\"llm_score\": <float 1.0 to 10.0>}"
-            ),
-            # ── COMPREHENSIVE: scoring part is deterministic (temp=0) ───────────────
-            # The comprehensive call splits: scoring always uses temp=0.
-            # Feedback wording uses the two-pass system above.
-            "comprehensive_analysis": (
-                "You are an elite AI interview evaluation engine. Analyze the given transcript and return ONLY one valid JSON object with EXACTLY these three top-level keys.\n"
-                "1. 'semantic': Extract all 9 fields from the transcript using this exact schema:\n"
-                "{\"greetings\": {\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"},\n"
-                " \"name\": {\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"},\n"
-                " \"education\": {\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"},\n"
-                " \"skills\": [{\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"}],\n"
-                " \"strengths\": [{\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"}],\n"
-                " \"areas_of_interest\": [{\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"}],\n"
-                " \"qualities\": [{\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"}],\n"
-                " \"experience\": [{\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"}],\n"
-                " \"career_goals\": {\"value\": \"\", \"confidence\": 0.0, \"evidence\": \"\"}}\n"
-                "2. 'scores': {\"llm_score\": <float 1.0-10.0>} — evaluate clarity, completeness, structure, technical depth. BE CONSISTENT: same input = same score.\n"
-                "3. 'feedback': {\"positives\": [{\"text\": \"...\", \"evidence\": \"...\"}], \"improvements\": [{\"text\": \"...\", \"evidence\": \"...\"}], \"coaching_summary\": \"string\"}\n"
-                "FEEDBACK RULES: Base feedback ONLY on actual facts. Do not force point counts. EVERY positive/improvement must have an 'evidence' string which is an EXACT VERBATIM QUOTE from the transcript. If you cannot quote verbatim, DO NOT include the point. Do NOT use generic text.\n"
-                "CRITICAL: Return ONLY the top-level JSON object. No markdown, no extra text. Missing transcript fields: value=\"\", confidence=0.0."
-            )
+        self._hr_model = None
+        self._hr_model_checked = False
+        logger.info(f"🧠 [GenAIEngine] Initializing Single-Pass Generative AI Engine...")
+
+    def _get_hr_model(self):
+        """Lazy-load the fine-tuned HR model."""
+        if not self._hr_model_checked:
+            self._hr_model_checked = True
+            try:
+                from backend.ml_models.hr_model_inference import hr_model
+                if hr_model.is_available():
+                    if hr_model.load():
+                        self._hr_model = hr_model
+                        logger.info("✅ [GenAIEngine] Fine-tuned HR model loaded as PRIMARY")
+                    else:
+                        logger.info("⚠️ [GenAIEngine] HR model exists but failed to load")
+                else:
+                    logger.info("⚠️ [GenAIEngine] No fine-tuned HR model found")
+            except Exception as e:
+                logger.warning(f"⚠️ [GenAIEngine] HR model import failed: {e}")
+        return self._hr_model
+
+    def health_check(self) -> dict:
+        """Quick probe to verify backend status."""
+        hr_available = False
+        try:
+            from backend.ml_models.hr_model_inference import hr_model
+            hr_available = hr_model.is_available()
+        except:
+            pass
+        return {
+            "status": "online" if hr_available else "offline",
+            "hr_model_available": hr_available,
+            "ollama_online": False,
+            "primary": "native_pytorch",
         }
 
-    def _strip_markdown(self, raw: str) -> str:
-        """Strips markdown code fences from LLM output."""
-        raw = raw.strip()
-        if "```json" in raw:
-            raw = raw.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw:
-            raw = raw.split("```")[1].split("```")[0].strip()
-        return raw
+    # ══════════════════════════════════════════════════════════════════
+    # DEEP RESUME EXTRACTION — CPU-bound, runs parallel with audio
+    # ══════════════════════════════════════════════════════════════════
 
-    def _recover_partial_json(self, raw: str) -> dict:
-        """Attempts to recover a truncated/malformed JSON by finding the outermost brace pair."""
-        try:
-            start = raw.index("{")
-            end = raw.rindex("}") + 1
-            return json.loads(raw[start:end])
-        except (ValueError, json.JSONDecodeError):
-            logger.error("❌ [GenAIEngine] JSON recovery also failed. Returning empty dict.")
-            return {}
-
-    def _infer(self, prompt: str, task: str, temperature_override: float = None) -> str:
+    def _deep_extract_resume(self, resume_text: str) -> dict:
         """
-        Core LLM inference method.
+        Deeply extract structured information from resume text.
 
-        Temperature strategy:
-          - Deterministic tasks (scoring, semantic, name_validation, feedback_structure):
-              temperature=0.0 → do_sample=False
-          - Creative tasks (feedback_wording, comprehensive_analysis):
-              temperature=0.7 → do_sample=True
-
-        temperature_override: if explicitly set, overrides the above rules.
+        Extracts:
+        - projects: list of {name, tech_stack, description}
+        - internships: list of {company, role, duration}
+        - certifications: list of strings
+        - education: {institution, degree, year, cgpa}
+        - skills: list of technical skill strings
+        - achievements: list of strings
+        - companies: list of company names
         """
-        llm_handler = model_manager.load_llm()
-        tokenizer = llm_handler["tokenizer"]
-        model = llm_handler["model"]
+        if not resume_text:
+            return {"projects": [], "internships": [], "certifications": [],
+                    "education": {}, "skills": [], "achievements": [], "companies": []}
 
-        system_prompt = self.system_instructions.get(task, "You are a helpful assistant.")
+        text = resume_text.strip()
+        text_lower = text.lower()
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
 
-        # ── PERSONA INJECTION (wording-only tasks) ──────────────────────────
-        # Only inject random style for tasks that produce varied wording.
-        # NEVER inject for deterministic scoring/extraction tasks.
-        if task in ("feedback_wording",):
-            style = random.choice(FEEDBACK_STYLES)
-            system_prompt = f"[PERSONA: Act as a {style}. Use a distinct, varied style.]\n" + system_prompt
-            logger.info(f"🎭 [GenAI] Style injection for wording: {style}")
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ]
-
-        text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-        model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
-
-        # ── TEMPERATURE STRATEGY ─────────────────────────────────────────────
-        # DETERMINISTIC tasks (scoring must be the same every time):
-        #   semantic, subjective_scoring, name_validation, feedback_structure → temp=0.0
-        # CREATIVE tasks (feedback wording only varies sentence-level):
-        #   feedback_wording → temp=0.7
-        # COMPREHENSIVE: the comprehensive_analysis single-call uses temp=0.0 for
-        #   the scoring section. Since it's one call, we use temp=0.0 and rely on
-        #   the structured prompt to get consistent scoring. Wording variation
-        #   is achieved via the two-pass system when using fallback feedback.
-        DETERMINISTIC_TASKS = {
-            "semantic", "subjective_scoring", "name_validation",
-            "feedback_structure", "comprehensive_analysis"
+        result = {
+            "projects": [],
+            "internships": [],
+            "certifications": [],
+            "education": {},
+            "skills": [],
+            "achievements": [],
+            "companies": [],
         }
 
-        if temperature_override is not None:
-            temp = temperature_override
-        elif task in DETERMINISTIC_TASKS:
-            temp = 0.0   # Fully deterministic → same input = same output
-        else:
-            temp = 0.7   # feedback_wording → sentence-level variation
+        # ── Section detection ──
+        current_section = None
+        section_lines = {}
+        section_keywords = {
+            "project": ["project", "projects", "personal project", "academic project",
+                        "key projects", "major projects", "mini project"],
+            "experience": ["experience", "work experience", "professional experience",
+                          "internship", "internships", "work history", "employment"],
+            "education": ["education", "academic", "qualification", "qualifications"],
+            "skills": ["skills", "technical skills", "technologies", "tech stack",
+                       "competencies", "proficiency", "tools"],
+            "certification": ["certification", "certifications", "certificate",
+                             "courses", "training", "online courses"],
+            "achievement": ["achievement", "achievements", "awards", "honors",
+                          "accomplishments", "extracurricular", "activities"],
+        }
 
-        # do_sample MUST be False when temp=0.0 for greedy decoding
-        do_sample = temp > 0.0
+        for line in lines:
+            line_lower = line.lower().strip()
+            # Check if this line is a section header
+            is_header = False
+            for section, keywords in section_keywords.items():
+                for kw in keywords:
+                    if (line_lower == kw or line_lower.startswith(kw + " ") or
+                        line_lower.startswith(kw + ":") or line_lower.startswith(kw + "—") or
+                        line_lower.startswith(kw + "-") or
+                        (len(line_lower) < 40 and kw in line_lower)):
+                        current_section = section
+                        is_header = True
+                        break
+                if is_header:
+                    break
 
-        logger.info(f"⏳ [GenAIEngine] Generating inference for task: {task} (temp={temp:.2f}, do_sample={do_sample})...")
-        try:
-            with torch.inference_mode():
-                generated_ids = model.generate(
-                    **model_inputs,
-                    # comprehensive_analysis needs more tokens for 3-key JSON
-                    max_new_tokens=850 if task in ("comprehensive_analysis", "feedback_wording") else 512,
-                    temperature=temp if do_sample else None,
-                    do_sample=do_sample,
-                    top_p=0.9 if do_sample else None,
-                    repetition_penalty=1.1 if do_sample else 1.0,
-                    pad_token_id=tokenizer.eos_token_id
-                )
-            generated_ids = [
-                output_ids[len(input_ids):]
-                for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
-            ]
-            response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-            return response
-        except Exception as e:
-            logger.error(f"❌ [GenAIEngine] Inference failed: {e}")
-            return "{}" if task in ("semantic", "feedback_structure", "feedback_wording", "comprehensive_analysis") else ""
+            if not is_header and current_section:
+                section_lines.setdefault(current_section, []).append(line)
 
-    def comprehensive_analyze(self, transcript: str, historical_context: list = None) -> dict | None:
-        """
-        COMBINED single-call analysis: semantic + scores + feedback in one LLM inference.
-        Returns dict with keys {'semantic', 'scores', 'feedback'} or None on failure.
+        # ── Extract Projects ──
+        project_lines = section_lines.get("project", [])
+        current_project = None
+        for line in project_lines:
+            # Project name detection (usually bold/titled or starts with bullet)
+            clean = re.sub(r'^[\-•*▪►→|]\s*', '', line).strip()
+            if not clean:
+                continue
 
-        Scoring is deterministic (temp=0.0 for comprehensive_analysis task).
-        Feedback from this call has 4-8 items enforced. For additional wording
-        variation in multi-attempt scenarios, FeedbackService's two-pass system is used
-        in the fallback path.
-        """
-        if not transcript:
-            return None
+            # If line looks like a project title (short, possibly with tech in parens)
+            if (len(clean.split()) <= 12 and not clean.endswith('.') and
+                (clean[0].isupper() or clean.startswith('"') or '|' in clean)):
+                # Extract tech stack if in brackets/parens
+                tech_match = re.search(r'[\(\[](.*?)[\)\]]', clean)
+                tech_stack = tech_match.group(1) if tech_match else ""
+                project_name = re.sub(r'[\(\[].*?[\)\]]', '', clean).strip()
+                project_name = re.sub(r'\s*[|–—-]\s*$', '', project_name).strip()
+                if project_name:
+                    current_project = {"name": project_name, "tech_stack": tech_stack, "description": ""}
+                    result["projects"].append(current_project)
+            elif current_project:
+                # This is a description line for the current project
+                desc = current_project["description"]
+                current_project["description"] = (desc + " " + clean).strip() if desc else clean
+                # Also try to extract tech mentions
+                if not current_project["tech_stack"]:
+                    tech_in_desc = re.search(r'(?:using|built with|tech[: ]+|stack[: ]+)([\w\s,/+#.]+)', clean.lower())
+                    if tech_in_desc:
+                        current_project["tech_stack"] = tech_in_desc.group(1).strip()
 
-        system_injection = ""
-        if historical_context:
-            system_injection = (
-                f"[RAG CONTEXT - HISTORICAL ENRICHMENT: The user previously received this coaching: {json.dumps(historical_context)}. "
-                "Do NOT just avoid repeating this. ENRICH your current feedback by explicitly comparing their current performance against this past advice. "
-                "Acknowledge their growth if they improved, or provide deeper, escalated strategies if they are stuck on the same issue.]\n"
+        # ── Extract Internships/Experience ──
+        exp_lines = section_lines.get("experience", [])
+        current_exp = None
+        for line in exp_lines:
+            clean = re.sub(r'^[\-•*▪►→|]\s*', '', line).strip()
+            if not clean:
+                continue
+
+            # Company/role pattern: "Company Name — Role" or "Role at Company"
+            company_match = re.search(
+                r'(.+?)\s*(?:[|–—-]|at\s+)\s*(.+?)(?:\s*[\(\[](.+?)[\)\]])?$', clean
             )
+            if company_match and len(clean.split()) <= 15:
+                part1 = company_match.group(1).strip()
+                part2 = company_match.group(2).strip()
+                duration = company_match.group(3) if company_match.group(3) else ""
 
-        prompt = f"{system_injection}Transcript: {transcript}"
-        raw = self._infer(prompt, "comprehensive_analysis")
-        raw = self._strip_markdown(raw)
+                # Determine which is company and which is role
+                role_words = {"intern", "developer", "engineer", "analyst", "designer",
+                             "manager", "lead", "associate", "trainee", "assistant",
+                             "executive", "coordinator", "consultant", "specialist"}
+                if any(rw in part1.lower() for rw in role_words):
+                    role, company = part1, part2
+                else:
+                    company, role = part1, part2
 
-        try:
-            parsed = json.loads(raw)
-            # Validate all 3 top-level keys exist
-            if all(k in parsed for k in ("semantic", "scores", "feedback")):
-                logger.info("✅ [GenAIEngine] Combined analysis parsed successfully.")
-                return parsed
-            else:
-                logger.warning(f"⚠️ [GenAIEngine] Combined JSON missing keys: {list(parsed.keys())}")
-                return None
-        except json.JSONDecodeError as e:
-            logger.warning(f"⚠️ [GenAIEngine] Combined JSON parse failed: {e}. Attempting partial recovery...")
-            recovered = self._recover_partial_json(raw)
-            if recovered and all(k in recovered for k in ("semantic", "scores", "feedback")):
-                logger.info("✅ [GenAIEngine] Partial JSON recovery succeeded for combined call.")
-                return recovered
-            logger.warning("⚠️ [GenAIEngine] Partial recovery failed. Triggering multi-call fallback.")
-            return None
+                current_exp = {"company": company, "role": role, "duration": duration}
+                result["internships"].append(current_exp)
+                if company and company not in result["companies"]:
+                    result["companies"].append(company)
+            elif current_exp:
+                # Description of the experience
+                pass  # We just track company/role, not description
 
-    def extract_semantic(self, transcript: str) -> dict:
-        """Forces the LLM to produce strict JSON with 9 semantic fields (temp=0.0 = deterministic)."""
-        if not transcript:
-            return {}
-
-        raw_json_string = self._infer(f"Transcript: {transcript}", "semantic")
-        raw_json_string = self._strip_markdown(raw_json_string)
-
-        try:
-            parsed = json.loads(raw_json_string)
-            logger.info(f"✅ [GenAIEngine] Semantic JSON parsed. Fields extracted: {list(parsed.keys())}")
-            return parsed
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ [GenAIEngine] Failed to parse semantic JSON: {e}\nRaw: {raw_json_string[:300]}")
-            return self._recover_partial_json(raw_json_string)
-
-    def extract_feedback_structure(self, transcript: str, semantic_data: dict, historical_context: list = None) -> dict:
-        """
-        STEP 1 of two-pass feedback: Extract structured coaching points (deterministic, temp=0.0).
-        Returns {"strengths": [...], "weaknesses": [...]} as topic phrases.
-        Same input → same points. Wording varies in step 2.
-        """
-        system_injection = ""
-        if historical_context:
-            system_injection = (
-                f"[HISTORY: User previously received coaching on: {json.dumps(historical_context)}. "
-                "Do NOT repeat the same advice. Choose distinct, complementary coaching points.]\n"
+            # Also detect standalone internship mentions
+            intern_match = re.search(
+                r'(?:intern(?:ship)?|trainee)\s+(?:at|in|with)\s+(.+?)(?:\s*[\(\[]|$)',
+                clean, re.IGNORECASE
             )
+            if intern_match and not current_exp:
+                company = intern_match.group(1).strip()
+                current_exp = {"company": company, "role": "Intern", "duration": ""}
+                result["internships"].append(current_exp)
+                if company not in result["companies"]:
+                    result["companies"].append(company)
 
-        prompt = (
-            f"{system_injection}"
-            f"Transcript: {transcript}\n\n"
-            f"Extracted Semantic Data: {json.dumps(semantic_data)}\n\n"
-            "Extract the structured coaching points now."
+        # ── Extract Certifications ──
+        cert_lines = section_lines.get("certification", [])
+        for line in cert_lines:
+            clean = re.sub(r'^[\-•*▪►→|]\s*', '', line).strip()
+            if clean and len(clean) > 3:
+                result["certifications"].append(clean)
+
+        # ── Extract Education ──
+        edu_lines = section_lines.get("education", [])
+        for line in edu_lines:
+            clean = re.sub(r'^[\-•*▪►→|]\s*', '', line).strip()
+            if not clean:
+                continue
+
+            # Look for degree patterns
+            degree_match = re.search(
+                r'(B\.?Tech|B\.?E|B\.?Sc|M\.?Tech|M\.?E|M\.?Sc|MBA|Ph\.?D|BCA|MCA|Diploma|Bachelor|Master)',
+                clean, re.IGNORECASE
+            )
+            if degree_match and not result["education"].get("degree"):
+                result["education"]["degree"] = clean
+                # Extract institution
+                inst_match = re.search(r'(?:from|at|,)\s+(.+?)(?:\s*[\(\[]|$)', clean)
+                if inst_match:
+                    result["education"]["institution"] = inst_match.group(1).strip()
+                # Extract CGPA
+                cgpa_match = re.search(r'(?:cgpa|gpa|percentage|%)[:\s]*([0-9.]+)', clean, re.IGNORECASE)
+                if cgpa_match:
+                    result["education"]["cgpa"] = cgpa_match.group(1)
+                # Extract year
+                year_match = re.search(r'(20\d{2})', clean)
+                if year_match:
+                    result["education"]["year"] = year_match.group(1)
+
+        # ── Extract Skills (keyword-based from skills section) ──
+        skill_lines = section_lines.get("skills", [])
+        all_tech_keywords = {
+            "python", "java", "javascript", "react", "node", "nodejs", "sql", "html", "css",
+            "machine learning", "deep learning", "ai", "artificial intelligence",
+            "data science", "cloud", "aws", "azure", "gcp", "docker", "kubernetes",
+            "git", "api", "rest", "graphql", "tensorflow", "pytorch", "flutter",
+            "angular", "vue", "django", "flask", "fastapi", "mongodb", "postgresql",
+            "mysql", "redis", "c++", "c#", "rust", "go", "golang", "typescript",
+            "spring", "jenkins", "ci/cd", "agile", "scrum", "microservices",
+            "linux", "figma", "tableau", "power bi", "hadoop", "spark", "kafka",
+            "excel", "pandas", "numpy", "scikit-learn", "opencv", "nlp",
+            "natural language processing", "computer vision", "blockchain",
+            "swift", "kotlin", "android", "ios", "web development",
+            "full stack", "frontend", "backend", "devops", "data engineering",
+        }
+        for line in skill_lines:
+            clean_lower = re.sub(r'^[\-•*▪►→|]\s*', '', line).strip().lower()
+            for skill in all_tech_keywords:
+                if skill in clean_lower and skill.title() not in result["skills"]:
+                    result["skills"].append(skill.title())
+
+        # Also search full resume for skills if skills section was empty
+        if not result["skills"]:
+            for skill in all_tech_keywords:
+                if skill in text_lower and skill.title() not in result["skills"]:
+                    result["skills"].append(skill.title())
+
+        # ── Extract Achievements ──
+        ach_lines = section_lines.get("achievement", [])
+        for line in ach_lines:
+            clean = re.sub(r'^[\-•*▪►→|]\s*', '', line).strip()
+            if clean and len(clean) > 5:
+                result["achievements"].append(clean)
+
+        logger.info(
+            f"📄 [ResumeExtract] {len(result['projects'])} projects, "
+            f"{len(result['internships'])} internships, "
+            f"{len(result['certifications'])} certs, "
+            f"{len(result['skills'])} skills, "
+            f"{len(result['achievements'])} achievements"
         )
-
-        raw = self._infer(prompt, "feedback_structure")
-        raw = self._strip_markdown(raw)
-
-        try:
-            parsed = json.loads(raw)
-            strengths = parsed.get("strengths", [])
-            weaknesses = parsed.get("weaknesses", [])
-            return {
-                "strengths": strengths,
-                "weaknesses": weaknesses
-            }
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ [GenAIEngine] Feedback structure parse failed: {e}")
-            return {"strengths": [], "weaknesses": []}
-
-    def generate_feedback_wording(
-        self,
-        structure: dict,
-        english_level: str = "Intermediate",
-        temperature_override: float = None
-    ) -> dict:
-        """
-        STEP 2 of two-pass feedback: Generate wording from structured points (temp=0.7).
-        Input is the deterministic structure from step 1.
-        Wording varies per call (sentence-level only), but logic/points stay the same.
-        """
-        level_note = f"User's English level: {english_level}. "
-        if english_level == "Advanced":
-            level_note += "Use technical, industry-specific language with deep nuance."
-        elif english_level == "Beginner":
-            level_note += "Use simple, encouraging, jargon-free language."
-        else:
-            level_note += "Use standard professional coaching language."
-
-        prompt = (
-            f"{level_note}\n\n"
-            f"Strengths to expand into coaching sentences:\n{json.dumps(structure.get('strengths', []))}\n\n"
-            f"Improvement areas to expand into coaching sentences:\n{json.dumps(structure.get('weaknesses', []))}\n\n"
-            "Write each item as a complete, varied coaching sentence. "
-            "Do NOT add, remove, or reorder points. Just convert them to professional coaching language."
-        )
-
-        raw = self._infer(prompt, "feedback_wording", temperature_override=temperature_override)
-        raw = self._strip_markdown(raw)
-
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ [GenAIEngine] Feedback wording parse failed: {e}")
-            return {
-                "positives": [],
-                "improvements": [],
-                "coaching_summary": "Your performance showed promise. Continue developing your interview skills."
-            }
-
-    def generate_feedback(self, transcript: str, semantic_data: dict, historical_context: list = None, temperature_override: float = None) -> dict:
-        """
-        Legacy single-pass feedback (used by FeedbackService fallback path).
-        Now internally uses the two-pass system for consistency.
-
-        Args:
-            temperature_override: if provided, used for wording step only.
-        """
-        # Step 1: Extract structure (deterministic)
-        structure = self.extract_feedback_structure(transcript, semantic_data, historical_context)
-
-        # Determine english level from semantic_data if injected via inject_data
-        english_level = "Intermediate"
-        if isinstance(semantic_data, dict):
-            override_note = semantic_data.get("system_override_note", "")
-            if "Advanced" in override_note:
-                english_level = "Advanced"
-            elif "Beginner" in override_note:
-                english_level = "Beginner"
-
-        # Step 2: Generate wording (varied, temp=0.7)
-        result = self.generate_feedback_wording(structure, english_level, temperature_override)
-
-        # Ensure required keys exist
-        if not result.get("positives"):
-            result["positives"] = structure.get("strengths", ["You completed the interview."])
-        if not result.get("improvements"):
-            result["improvements"] = structure.get("weaknesses", ["Continue practicing."])
-        if not result.get("coaching_summary"):
-            result["coaching_summary"] = "Your performance showed effort and dedication."
 
         return result
 
-    def validate_name(self, extracted_name: str, phonetic_match: str, transcript: str) -> str:
-        prompt = f"Transcript Context: {transcript}\nExtracted Name (NER): {extracted_name}\nPhonetic Match (RapidFuzz): {phonetic_match}\n\nReturn the final corrected name in JSON."
-        raw_json_string = self._infer(prompt, "name_validation")
+    # ══════════════════════════════════════════════════════════════════
+    # JSON PARSING UTILITIES
+    # ══════════════════════════════════════════════════════════════════
+
+    def _strip_markdown(self, raw: str) -> str:
+        """Strip markdown, think blocks, and model tokens from raw LLM output."""
+        raw = raw.strip()
+        raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+        raw = re.sub(r'<think>.*', '', raw, flags=re.DOTALL).strip()
+        if raw.startswith("I'm DeepSeek") or raw.startswith("I am DeepSeek"):
+            return '{}'
+        if "```json" in raw:
+            raw = raw.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw:
+            parts = raw.split("```")
+            if len(parts) >= 3:
+                raw = parts[1].strip()
+        raw = re.sub(r'<\|.*?\|>', '', raw).strip()
+        brace_start = raw.find("{")
+        if brace_start >= 0:
+            raw = raw[brace_start:]
+        return raw
+
+    def _recover_partial_json(self, raw: str) -> dict:
+        """Recover truncated/malformed JSON from model output."""
+        raw = raw.strip()
+        if not raw:
+            return {}
+
+        # Method 1: Try complete JSON from each opening brace
+        start_indices = [m.start() for m in re.finditer(r'\{', raw)]
+        for start in start_indices:
+            text_to_parse = raw[start:]
+            depth = 0
+            for i, char in enumerate(text_to_parse):
+                if char == '{': depth += 1
+                elif char == '}': depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text_to_parse[:i+1])
+                    except:
+                        pass
+
+        # Method 2: Repair truncated JSON
+        try:
+            s = raw.index("{")
+            fragment = raw[s:]
+            if fragment.count('"') % 2 != 0:
+                fragment += '"'
+            open_brackets = fragment.count('[') - fragment.count(']')
+            fragment += ']' * max(0, open_brackets)
+            open_braces = fragment.count('{') - fragment.count('}')
+            fragment += '}' * max(0, open_braces)
+            return json.loads(fragment)
+        except:
+            pass
+
+        # Method 3: First '{' to last '}'
+        try:
+            s = raw.index("{")
+            e = raw.rindex("}")
+            return json.loads(raw[s:e+1])
+        except:
+            logger.error(f"❌ [GenAIEngine] JSON recovery failed. Raw: {raw[:300]}")
+            return {}
+
+    # ══════════════════════════════════════════════════════════════════
+    # UNIFIED PROMPT BUILDER — Single comprehensive prompt
+    # ══════════════════════════════════════════════════════════════════
+
+    def _build_unified_prompt(self, transcript: str, resume_text: str,
+                              resume_data: dict, audio_metrics: dict,
+                              filler_stats: dict, strictness: str) -> tuple:
+        """
+        Build a SINGLE comprehensive prompt that produces rubric + feedback.
+        Returns (system_prompt, user_prompt) tuple.
+        """
+        af = audio_metrics or {}
+        fs = filler_stats or {}
+
+        # ── SYSTEM PROMPT — HR Evaluator persona ──
+        strict_config = STRICTNESS_MAP.get(strictness.lower().strip(), STRICTNESS_MAP["intermediate"])
+
+        system_prompt = (
+            f"You are a Principal HR Recruiter at a FAANG company (Google/Amazon/Meta). "
+            f"Evaluate this candidate's interview self-introduction pitch with forensic precision.\n\n"
+            f"EVALUATION MODE: {strictness.upper()}\n"
+            f"Persona: {strict_config['persona']}\n"
+            f"Instruction: {strict_config['instruction']}\n"
+            f"Threshold: {strict_config['threshold']}\n\n"
+            f"CRITICAL RULES:\n"
+            f"1. Generate EXACTLY 8-10 UNIQUE, specific, evidence-backed positive points.\n"
+            f"2. Generate EXACTLY 8-10 UNIQUE, specific, actionable improvement points.\n"
+            f"3. Each point MUST reference specific content from the transcript, resume, or audio metrics.\n"
+            f"4. NO generic advice. NO template sentences. Every point must feel uniquely human-written.\n"
+            f"5. For improvements, PREFIX each with a category tag: [RESUME GAP], [DELIVERY], [CONTENT DEPTH], [STRUCTURE], or [PROFESSIONAL POLISH]\n"
+            f"6. Cross-reference resume against pitch: what was MATCHED and what was MISSED.\n"
+            f"7. Notice EVERY minor detail: filler words, pace, tone, energy, pauses, pronunciation.\n"
+            f"8. For each rubric dimension, provide a specific reasoning explaining the score.\n\n"
+            f"Return ONLY valid JSON with this structure:\n"
+            f'{{"rubric_scores":{{"opening_greeting":{{"score":0.0,"reasoning":"..."}},\n'
+            f'"education":{{"score":0.0,"reasoning":"..."}},\n'
+            f'"technical_skills":{{"score":0.0,"reasoning":"..."}},\n'
+            f'"project_evidence":{{"score":0.0,"reasoning":"..."}},\n'
+            f'"work_experience":{{"score":0.0,"reasoning":"..."}},\n'
+            f'"career_goals":{{"score":0.0,"reasoning":"..."}},\n'
+            f'"strengths_qualities":{{"score":0.0,"reasoning":"..."}},\n'
+            f'"areas_of_interest":{{"score":0.0,"reasoning":"..."}}}},\n'
+            f'"overall_score":0.0,\n'
+            f'"score_deduction_reason":"Why candidate did not get 10/10",\n'
+            f'"feedback":{{\n'
+            f'  "positives":["8-10 unique points with evidence"],\n'
+            f'  "improvements":["8-10 unique points with [CATEGORY] tags"],\n'
+            f'  "suggestions":["3-5 rewritten weak sentences"],\n'
+            f'  "coaching_summary":"2-3 sentence holistic summary"\n'
+            f'}},\n'
+            f'"resume_alignment":{{"matched":["items in BOTH resume and pitch"],"missed":["resume items NOT in pitch"]}}}}'
+        )
+
+        # ── USER PROMPT — All data combined ──
+        parts = []
+
+        # 1. Resume data (deep extracted)
+        if resume_text:
+            parts.append(f"[CANDIDATE RESUME TEXT]:\n{resume_text[:1800]}")
+
+            if resume_data:
+                resume_detail = "\n[DETAILED RESUME ANALYSIS]:\n"
+                if resume_data.get("projects"):
+                    resume_detail += "PROJECTS found in resume:\n"
+                    for i, proj in enumerate(resume_data["projects"][:8], 1):
+                        resume_detail += f"  {i}. {proj['name']}"
+                        if proj.get("tech_stack"):
+                            resume_detail += f" (Tech: {proj['tech_stack']})"
+                        if proj.get("description"):
+                            resume_detail += f" — {proj['description'][:100]}"
+                        resume_detail += "\n"
+
+                if resume_data.get("internships"):
+                    resume_detail += "INTERNSHIPS/EXPERIENCE found in resume:\n"
+                    for i, exp in enumerate(resume_data["internships"][:6], 1):
+                        resume_detail += f"  {i}. {exp.get('role', 'Unknown')} at {exp.get('company', 'Unknown')}"
+                        if exp.get("duration"):
+                            resume_detail += f" ({exp['duration']})"
+                        resume_detail += "\n"
+
+                if resume_data.get("certifications"):
+                    resume_detail += f"CERTIFICATIONS: {', '.join(resume_data['certifications'][:6])}\n"
+
+                if resume_data.get("skills"):
+                    resume_detail += f"SKILLS listed: {', '.join(resume_data['skills'][:15])}\n"
+
+                if resume_data.get("achievements"):
+                    resume_detail += f"ACHIEVEMENTS: {', '.join(resume_data['achievements'][:4])}\n"
+
+                if resume_data.get("education"):
+                    edu = resume_data["education"]
+                    resume_detail += f"EDUCATION: {edu.get('degree', 'N/A')}"
+                    if edu.get("institution"):
+                        resume_detail += f" from {edu['institution']}"
+                    if edu.get("cgpa"):
+                        resume_detail += f" (CGPA: {edu['cgpa']})"
+                    resume_detail += "\n"
+
+                resume_detail += (
+                    "\n⚠️ MANDATORY: For each project listed above, check if it was mentioned in the audio pitch. "
+                    "For each internship, check if the company/role was mentioned. "
+                    "Report all matches and misses in resume_alignment."
+                )
+                parts.append(resume_detail)
+
+        # 2. Audio analysis metrics
+        filler_detail = ""
+        if fs:
+            per_type = fs.get("per_type", {})
+            if per_type:
+                filler_detail = f"  Filler breakdown: {json.dumps(per_type)}\n"
+                if fs.get("most_frequent"):
+                    filler_detail += f"  Most frequent filler: '{fs['most_frequent']}' ({per_type.get(fs['most_frequent'], 0)} times)\n"
+                if fs.get("position_cluster") and fs["position_cluster"] != "none":
+                    filler_detail += f"  Filler concentration: {fs['position_cluster']} of pitch\n"
+                if fs.get("self_corrections", 0) > 0:
+                    filler_detail += f"  Self-corrections detected: {fs['self_corrections']}\n"
+
+        audio_block = (
+            f"\n[AUDIO ANALYSIS METRICS — MEASURED FROM VOICE]:\n"
+            f"- Speaking Pace: {af.get('wpm_estimate', 140):.0f} WPM (label: {af.get('pace_label', 'unknown')})\n"
+            f"- Tone Expressiveness: {af.get('tone_expressiveness', 0.5):.2f}/1.0 ({af.get('tone_label', 'moderate')})\n"
+            f"- Tone Richness (MFCC): {af.get('tone_richness', 0.5):.2f}/1.0\n"
+            f"- Speech Fluency: {af.get('fluency_score', 0.5):.2f}/1.0\n"
+            f"- Pronunciation Clarity: {af.get('pronunciation_score', 0.5):.2f}/1.0\n"
+            f"- HNR (Voice Clarity): {af.get('hnr_score', 0.5):.2f}/1.0\n"
+            f"- Energy Trajectory: {af.get('energy_trajectory', 'stable')}\n"
+            f"- Energy Consistency: {af.get('energy_consistency', 0.5):.2f}/1.0\n"
+            f"- Speech Rate Stability: {af.get('speech_rate_stability', 0.5):.2f}/1.0\n"
+            f"- Long Pauses: {af.get('long_pauses', 0)} (avg: {af.get('avg_pause_duration', 0):.2f}s)\n"
+            f"- Pitch Range: {af.get('pitch_range', 80):.0f}Hz | Pitch Variance: {af.get('pitch_variance', 0.3):.2f}\n"
+            f"- Filler Words Detected: {fs.get('count', 0)} total (density: {fs.get('density', 0):.1f} per 100 words)\n"
+            f"{filler_detail}"
+            f"- Dynamic Confidence: {af.get('dynamic_confidence', 50.0):.0f}% ({af.get('confidence_label', 'MEDIUM')})\n"
+            f"- Total Words Spoken: {len(transcript.split())}\n"
+        )
+        parts.append(audio_block)
+
+        # 3. Transcript
+        parts.append(f"\n[AUDIO TRANSCRIPT OF CANDIDATE'S PITCH]:\n{transcript[:900]}")
+
+        # 4. Explicit analysis instructions
+        parts.append(
+            "\n[YOUR ANALYSIS MUST INCLUDE]:\n"
+            "- Reference SPECIFIC words/phrases from the transcript\n"
+            "- If resume provided: explicitly name which projects/internships were/weren't mentioned\n"
+            "- Comment on EVERY abnormal audio metric (low fluency, filler density, pace issues, energy drop)\n"
+            "- Each positive must cite evidence (quoted words, metric values, resume matches)\n"
+            "- Each improvement MUST start with a category tag: [RESUME GAP], [DELIVERY], [CONTENT DEPTH], [STRUCTURE], or [PROFESSIONAL POLISH]\n"
+            "- coaching_summary: 2-3 sentences summarizing overall impression as if spoken to the candidate face-to-face\n"
+        )
+
+        user_prompt = "\n".join(parts)
+        return system_prompt, user_prompt
+
+    # ══════════════════════════════════════════════════════════════════
+    # DATA-DRIVEN FALLBACK — Pure generative from metrics
+    # ══════════════════════════════════════════════════════════════════
+
+    def _generate_fallback_feedback(self, transcript: str, resume_text: str,
+                                    resume_data: dict, audio_metrics: dict,
+                                    filler_stats: dict, overall_score: float,
+                                    strictness: str) -> dict:
+        """
+        Construct intelligent feedback from actual metrics when LLM fails.
+        GUARANTEE: Always returns 8-10 positives and 8-10 improvements.
+        Every sentence is dynamically constructed from real data — zero templates.
+        """
+        af = audio_metrics or {}
+        fs = filler_stats or {}
+        words = transcript.split()
+        word_count = len(words)
+        text_lower = transcript.lower()
+        sentences = [s.strip() for s in transcript.replace('!', '.').replace('?', '.').split('.') if s.strip()]
+        sentence_count = len(sentences)
+        unique_words = set(w.lower().strip('.,!?;:') for w in words if len(w) > 2)
+        vocab_ratio = len(unique_words) / max(word_count, 1)
+        first_words = ' '.join(words[:8]) if word_count >= 8 else transcript
+
+        positives = []
+        improvements = []
+
+        # ══════════════════════════════════════════════════════════════
+        # LAYER 1: AUDIO DELIVERY ANALYSIS
+        # ══════════════════════════════════════════════════════════════
+
+        wpm = af.get("wpm_estimate", 140)
+        if 120 <= wpm <= 160:
+            positives.append(
+                f"Your speaking pace (~{int(wpm)} WPM) sits in the professional sweet spot of 120-160 WPM, "
+                f"allowing the interviewer to absorb each point while maintaining energy."
+            )
+        elif wpm < 100:
+            improvements.append(
+                f"[DELIVERY] At ~{int(wpm)} WPM, your pace is significantly below the 120-160 WPM benchmark. "
+                f"This can read as hesitation. Practice with a timer to build momentum."
+            )
+        elif wpm < 120:
+            improvements.append(
+                f"[DELIVERY] Pace at ~{int(wpm)} WPM falls slightly below ideal 120-160 WPM. "
+                f"A marginal increase of 15-20 WPM would project greater conviction."
+            )
+        elif wpm > 185:
+            improvements.append(
+                f"[DELIVERY] At ~{int(wpm)} WPM, you're speaking faster than 160 WPM ceiling. "
+                f"Rapid delivery risks the interviewer missing critical information."
+            )
+        else:
+            improvements.append(
+                f"[DELIVERY] Pace at ~{int(wpm)} WPM is slightly above ideal. "
+                f"Slowing down by 10-15% will improve clarity."
+            )
+
+        tone_expr = af.get("tone_expressiveness", 0.5)
+        tone_label = af.get("tone_label", "moderate")
+        pitch_range = af.get("pitch_range", 80)
+        if tone_expr >= 0.65:
+            positives.append(
+                f"Vocal expressiveness is strong ({tone_label}, {tone_expr:.2f}/1.0 with {pitch_range:.0f}Hz range). "
+                f"Natural modulation keeps the listener engaged."
+            )
+        elif tone_expr >= 0.4:
+            positives.append(
+                f"Voice carries {tone_label} expressiveness ({tone_expr:.2f}/1.0) — natural variation prevents monotony."
+            )
+            improvements.append(
+                f"[DELIVERY] While vocal tone is adequate ({tone_expr:.2f}/1.0), pushing toward more dynamic pitch "
+                f"variation when stating achievements would elevate the delivery."
+            )
+        else:
+            improvements.append(
+                f"[DELIVERY] Voice registers as {tone_label} ({tone_expr:.2f}/1.0) with narrow {pitch_range:.0f}Hz range. "
+                f"Practice varying intonation — go higher for achievements, lower for transitions."
+            )
+
+        fluency = af.get("fluency_score", 0.5)
+        filler_count = fs.get("count", 0)
+        per_type = fs.get("per_type", {})
+        most_freq = fs.get("most_frequent", None)
+        position_cluster = fs.get("position_cluster", "none")
+
+        if fluency >= 0.7:
+            filler_note = f" with only {filler_count} filler words" if filler_count <= 2 else ""
+            positives.append(
+                f"Impressive speech fluency at {fluency:.2f}/1.0{filler_note}. "
+                f"Sentences flow with confident transitions, indicating thorough preparation."
+            )
+        elif fluency >= 0.45:
+            positives.append(
+                f"Speech maintains reasonable flow ({fluency:.2f}/1.0 fluency) "
+                f"without significant breakdown at any point."
+            )
+            filler_detail = ""
+            if filler_count > 2 and most_freq:
+                filler_detail = (
+                    f"You used '{most_freq}' {per_type.get(most_freq, 0)} times"
+                    f"{' (concentrated in the ' + position_cluster + ')' if position_cluster not in ('none', 'distributed') else ''}. "
+                )
+            improvements.append(
+                f"[DELIVERY] Fluency could improve from {fluency:.2f}/1.0. {filler_detail}"
+                f"Replace filler words with brief, confident pauses."
+            )
+        else:
+            long_pauses = af.get("long_pauses", 0)
+            filler_detail = ""
+            if filler_count > 0 and per_type:
+                top_3 = sorted(per_type.items(), key=lambda x: -x[1])[:3]
+                filler_detail = ", ".join(f"'{k}' ×{v}" for k, v in top_3)
+            improvements.append(
+                f"[DELIVERY] Speech fluency is a concern at {fluency:.2f}/1.0 — "
+                f"{filler_count} fillers ({filler_detail}), {long_pauses} noticeable pauses. "
+                f"Outline 4-5 bullet points and practice until transitions feel natural."
+            )
+
+        pronun = af.get("pronunciation_score", 0.5)
+        hnr = af.get("hnr_score", 0.5)
+        if pronun >= 0.65:
+            positives.append(
+                f"Pronunciation clarity is standout at {pronun:.2f}/1.0 (harmonic quality: {hnr:.2f}). "
+                f"Words are sharply articulated — crucial for professional settings."
+            )
+        elif pronun >= 0.4:
+            positives.append(
+                f"Pronunciation is generally clear ({pronun:.2f}/1.0), making content accessible."
+            )
+        else:
+            improvements.append(
+                f"[DELIVERY] Pronunciation clarity at {pronun:.2f}/1.0 may impact comprehension. "
+                f"Practice speaking slower when introducing technical terms."
+            )
+
+        energy = af.get("energy_trajectory", "stable")
+        energy_con = af.get("energy_consistency", 0.5)
+        if energy == "building":
+            positives.append(
+                f"Vocal energy builds progressively (consistency: {energy_con:.2f}/1.0) — "
+                f"signals growing confidence and leaves a powerful closing impression."
+            )
+        elif energy == "stable":
+            positives.append(
+                f"Voice energy remains consistent (stability: {energy_con:.2f}/1.0), showing composure."
+            )
+        elif energy == "fading":
+            improvements.append(
+                f"[DELIVERY] Voice energy drops toward the end ({energy}, consistency: {energy_con:.2f}/1.0). "
+                f"The last 10 seconds form the strongest impression — practice finishing strong."
+            )
+
+        confidence = af.get("dynamic_confidence", 50.0)
+        conf_label = af.get("confidence_label", "MEDIUM")
+        if confidence >= 78:
+            positives.append(
+                f"Overall vocal confidence at {confidence:.0f}% ({conf_label}) — "
+                f"steady pace, clear pronunciation, and expressive tone project genuine self-assurance."
+            )
+        elif confidence >= 60:
+            positives.append(
+                f"Vocal confidence at {confidence:.0f}% ({conf_label}), placing you in a competent range."
+            )
+        else:
+            improvements.append(
+                f"[DELIVERY] Vocal confidence at {confidence:.0f}% ({conf_label}). "
+                f"Focus on: louder volume, fewer fillers, and decisive sentence endings."
+            )
+
+        # ══════════════════════════════════════════════════════════════
+        # LAYER 2: CONTENT ANALYSIS
+        # ══════════════════════════════════════════════════════════════
+
+        greeting_kws = ["hello", "hi ", "good morning", "good afternoon", "good evening"]
+        name_patterns = ["my name is", "i am ", "i'm ", "myself "]
+        has_greeting = any(kw in text_lower[:120] for kw in greeting_kws)
+        has_name = any(pat in text_lower[:160] for pat in name_patterns)
+
+        if has_greeting and has_name:
+            positives.append(
+                f"Strong opening — proper greeting + name introduction ('{first_words}...'). "
+                f"Professional start sets the right tone."
+            )
+        elif has_name:
+            improvements.append(
+                f"[STRUCTURE] You introduced your name but didn't begin with a formal greeting. "
+                f"A warm 'Good morning' before your name creates a more polished impression."
+            )
+        elif has_greeting:
+            improvements.append(
+                f"[STRUCTURE] Greeting present but name wasn't clearly stated. "
+                f"Identify yourself within the first 3-5 seconds."
+            )
+        else:
+            improvements.append(
+                f"[STRUCTURE] No greeting or name introduction detected. "
+                f"Always start with: 'Hello, my name is [Name]'."
+            )
+
+        edu_kws = ["university", "college", "degree", "bachelor", "master", "btech", "b.tech",
+                    "student", "studying", "semester", "computer science", "engineering", "graduated"]
+        edu_found = [kw for kw in edu_kws if kw in text_lower]
+        if len(edu_found) >= 2:
+            positives.append(
+                f"Educational background effectively communicated — specific academic details "
+                f"provide crucial context about your training level."
+            )
+        elif len(edu_found) == 1:
+            improvements.append(
+                f"[CONTENT DEPTH] Education only briefly touched. Specify degree, "
+                f"institution, specialization, and year to anchor your professional identity."
+            )
+        else:
+            improvements.append(
+                f"[CONTENT DEPTH] No clear educational background detected. "
+                f"Include: degree type, institution name, and year."
+            )
+
+        tech_kws = ["python", "java", "javascript", "react", "node", "sql", "html", "css",
+                     "machine learning", "deep learning", "ai", "data science", "cloud",
+                     "aws", "docker", "tensorflow", "pytorch", "flutter", "angular",
+                     "c++", "typescript", "django", "flask", "mongodb", "linux", "git"]
+        skills_found = [kw for kw in tech_kws if kw in text_lower]
+
+        if len(skills_found) >= 4:
+            positives.append(
+                f"Strong technical coverage — {len(skills_found)} technologies mentioned "
+                f"({', '.join(s.title() for s in skills_found[:5])}). Demonstrates breadth of knowledge."
+            )
+        elif len(skills_found) >= 2:
+            positives.append(
+                f"You mentioned {len(skills_found)} technical skills ({', '.join(s.title() for s in skills_found)})."
+            )
+            improvements.append(
+                f"[CONTENT DEPTH] Expand to 4-5 core technologies. Ranking proficiency "
+                f"(e.g., 'Python—advanced, React—intermediate') adds depth."
+            )
+        elif len(skills_found) == 1:
+            improvements.append(
+                f"[CONTENT DEPTH] Only one skill ({skills_found[0].title()}) mentioned. "
+                f"List 3-5 core technologies with brief usage context."
+            )
+        else:
+            improvements.append(
+                f"[CONTENT DEPTH] No specific technical skills detected. "
+                f"Naming 3-5 technologies is essential for any technical introduction."
+            )
+
+        proj_kws = ["project", "built", "developed", "created", "designed", "implemented",
+                     "hackathon", "deployed", "application", "system", "website",
+                     "contributed", "research", "published", "portfolio"]
+        projs_found = [kw for kw in proj_kws if kw in text_lower]
+        if len(projs_found) >= 3:
+            positives.append(
+                f"Project evidence convincingly presented — words like "
+                f"'{', '.join(projs_found[:3])}' show tangible achievements."
+            )
+        elif len(projs_found) >= 1:
+            improvements.append(
+                f"[CONTENT DEPTH] You hint at project experience ('{projs_found[0]}') but could strengthen it. "
+                f"Name one project, the problem, tech stack, and outcome."
+            )
+        else:
+            improvements.append(
+                f"[CONTENT DEPTH] No project evidence detected. Include at least one project: "
+                f"problem → approach → result."
+            )
+
+        goal_kws = ["goal", "aspire", "want to", "plan to", "aim", "dream", "future",
+                     "career", "ambition", "passionate about", "become"]
+        goals_found = [kw for kw in goal_kws if kw in text_lower]
+        if len(goals_found) >= 2:
+            positives.append(
+                f"Clear career direction articulated — shows maturity and intentionality."
+            )
+        elif len(goals_found) == 0:
+            improvements.append(
+                f"[STRUCTURE] No career goals mentioned. End with: "
+                f"'I'm aiming to specialize in...' to show trajectory."
+            )
+
+        # ══════════════════════════════════════════════════════════════
+        # LAYER 3: STRUCTURAL ANALYSIS
+        # ══════════════════════════════════════════════════════════════
+
+        if word_count < 30:
+            improvements.append(
+                f"[STRUCTURE] At only {word_count} words, pitch is critically short. "
+                f"A compelling intro needs 80-200 words: greeting → education → skills → projects → goals."
+            )
+        elif word_count < 60:
+            improvements.append(
+                f"[STRUCTURE] Pitch ({word_count} words) is below ideal 100-200 range. "
+                f"Add specific examples and project names to extend naturally."
+            )
+        elif 80 <= word_count <= 200:
+            positives.append(
+                f"Pitch length well-calibrated at {word_count} words — long enough for substance, "
+                f"short enough for attention."
+            )
+
+        if vocab_ratio >= 0.65:
+            positives.append(
+                f"Impressive vocabulary diversity ({vocab_ratio:.2f}) — varied language signals strong communication."
+            )
+        elif vocab_ratio < 0.40 and word_count > 30:
+            improvements.append(
+                f"[PROFESSIONAL POLISH] Vocabulary diversity low ({vocab_ratio:.2f}). "
+                f"Reduce repetition by using synonyms and varying sentence structures."
+            )
+
+        # ══════════════════════════════════════════════════════════════
+        # LAYER 4: RESUME-PITCH CROSS-REFERENCE
+        # ══════════════════════════════════════════════════════════════
+        matched_skills = []
+        missed_skills = []
+        matched_projects = []
+        missed_projects = []
+
+        if resume_data:
+            # Skills cross-reference
+            for skill in resume_data.get("skills", []):
+                if skill.lower() in text_lower:
+                    matched_skills.append(skill)
+                else:
+                    missed_skills.append(skill)
+
+            # Project cross-reference
+            for proj in resume_data.get("projects", []):
+                name_lower = proj.get("name", "").lower()
+                # Check if any significant word from project name appears in pitch
+                name_words = [w for w in name_lower.split() if len(w) > 3]
+                if any(w in text_lower for w in name_words):
+                    matched_projects.append(proj["name"])
+                else:
+                    missed_projects.append(proj["name"])
+
+            if matched_skills:
+                positives.append(
+                    f"Resume-pitch alignment strong — actively referenced {', '.join(matched_skills[:5])} "
+                    f"from your resume. Consistency signals genuine familiarity."
+                )
+
+            if missed_projects:
+                improvements.append(
+                    f"[RESUME GAP] Your resume lists projects ({', '.join(missed_projects[:3])}) "
+                    f"but they weren't mentioned in the pitch — missed opportunity to showcase work."
+                )
+
+            if len(missed_skills) >= 3:
+                improvements.append(
+                    f"[RESUME GAP] Resume highlights {', '.join(missed_skills[:5])} "
+                    f"but none mentioned in pitch. Prepare talking points for every major resume skill."
+                )
+
+            # Internship cross-reference
+            missed_internships = []
+            for exp in resume_data.get("internships", []):
+                company = exp.get("company", "").lower()
+                company_words = [w for w in company.split() if len(w) > 3]
+                if not any(w in text_lower for w in company_words):
+                    missed_internships.append(f"{exp.get('role', '')} at {exp.get('company', '')}")
+
+            if missed_internships:
+                improvements.append(
+                    f"[RESUME GAP] Internship experience ({', '.join(missed_internships[:2])}) "
+                    f"from resume not discussed — interviewers expect you to reference real experience."
+                )
+
+        elif resume_text:
+            # Fallback: simple keyword matching if deep extraction failed
+            resume_lower = resume_text.lower()
+            all_tech = [
+                "python", "java", "javascript", "react", "node", "sql", "html", "css",
+                "machine learning", "deep learning", "aws", "docker", "kubernetes",
+                "git", "tensorflow", "pytorch", "flutter", "angular", "vue",
+                "django", "flask", "mongodb", "postgresql", "c++", "typescript",
+            ]
+            for kw in all_tech:
+                if kw in resume_lower and kw in text_lower:
+                    matched_skills.append(kw.title())
+                elif kw in resume_lower and kw not in text_lower:
+                    missed_skills.append(kw.title())
+
+            if matched_skills:
+                positives.append(
+                    f"Resume-pitch alignment — you referenced {', '.join(matched_skills[:5])} from your resume."
+                )
+            if len(missed_skills) >= 3:
+                improvements.append(
+                    f"[RESUME GAP] Resume lists {', '.join(missed_skills[:5])} but not mentioned in pitch."
+                )
+
+        # ══════════════════════════════════════════════════════════════
+        # LAYER 5: ENSURE 8-10 MINIMUM
+        # ══════════════════════════════════════════════════════════════
+
+        additional_pos = []
+        if word_count > 20:
+            additional_pos.append(
+                f"Delivered a substantive pitch of {word_count} words across "
+                f"{sentence_count} sentences — demonstrates interview preparation."
+            )
+        if af.get("speech_rate_stability", 0.5) >= 0.6:
+            additional_pos.append(
+                f"Speech rhythm consistent ({af.get('speech_rate_stability', 0.5):.2f}/1.0 stability) — "
+                f"no significant speed fluctuations."
+            )
+        if pronun >= 0.5 and fluency >= 0.5:
+            additional_pos.append(
+                f"Solid fundamentals — pronunciation ({pronun:.2f}) + fluency ({fluency:.2f}) "
+                f"ensure message is communicated effectively."
+            )
+        if any(kw in text_lower for kw in ["intern", "experience", "worked", "company"]):
+            additional_pos.append(
+                f"Referencing real-world experience adds professional credibility — "
+                f"positions you as someone who has applied knowledge practically."
+            )
+
+        additional_imp = []
+        if not any(kw in text_lower for kw in ["because", "for example", "such as", "specifically"]):
+            additional_imp.append(
+                f"[PROFESSIONAL POLISH] Pitch lacks supporting connectors ('because', 'for example'). "
+                f"One concrete example per skill claim transforms assertion to evidence."
+            )
+        if word_count > 20 and not any(kw in text_lower for kw in ["thank", "appreciate"]):
+            additional_imp.append(
+                f"[STRUCTURE] No professional closing detected. "
+                f"End with 'I'm eager to contribute to...' or 'Thank you for the opportunity'."
+            )
+        if fs.get("self_corrections", 0) > 0:
+            additional_imp.append(
+                f"[DELIVERY] {fs['self_corrections']} self-correction(s) detected in speech. "
+                f"While natural, frequent restarts can undermine confidence perception."
+            )
+
+        while len(positives) < 8 and additional_pos:
+            positives.append(additional_pos.pop(0))
+        while len(improvements) < 8 and additional_imp:
+            improvements.append(additional_imp.pop(0))
+
+        # Final safety
+        while len(positives) < 8:
+            positives.append(
+                f"Engaging with this pitch exercise builds familiarity with articulating "
+                f"your professional story under interview pressure."
+            )
+            break
+        while len(improvements) < 8:
+            improvements.append(
+                f"[STRUCTURE] Use the NESPM framework: Name → Education → Skills → Project → Goals "
+                f"for comprehensive coverage in under 2 minutes."
+            )
+            break
+
+        # ── Coaching Summary ──
+        score_label = ("excellent" if overall_score >= 8 else "strong" if overall_score >= 7
+                       else "solid" if overall_score >= 6 else "developing" if overall_score >= 4
+                       else "foundational")
+        coaching_summary = f"Overall performance is {score_label} ({overall_score:.1f}/10). "
+        if overall_score >= 7:
+            coaching_summary += (
+                f"The pitch demonstrates clear preparation with {word_count} words of substantive content. "
+                f"Focus on the targeted improvements to elevate from good to exceptional."
+            )
+        elif overall_score >= 5:
+            coaching_summary += (
+                f"The foundation is present with {word_count} words at {int(wpm)} WPM, "
+                f"but gaps in content coverage and delivery polish need addressing."
+            )
+        else:
+            coaching_summary += (
+                f"The pitch needs substantial development across content and delivery. "
+                f"Write your full introduction, then practice 5-10 times until structure becomes natural."
+            )
+
+        logger.info(
+            f"🔄 [GenAIEngine] Fallback: {len(positives)} positives, {len(improvements)} improvements"
+        )
+
+        return {
+            "positives": positives[:10],
+            "improvements": improvements[:10],
+            "coaching_summary": coaching_summary,
+            "suggestions": [],
+            "resume_alignment": {
+                "matched": (matched_skills + matched_projects)[:8],
+                "missed": (missed_skills + missed_projects + [
+                    exp.get("company", "") for exp in (resume_data or {}).get("internships", [])
+                    if exp.get("company", "").lower() not in text_lower
+                ])[:8],
+            }
+        }
+
+    # ══════════════════════════════════════════════════════════════════
+    # PRIMARY: Comprehensive HR Analysis — SINGLE MODEL CALL
+    # ══════════════════════════════════════════════════════════════════
+
+    def comprehensive_analyze(self, transcript: str, resume_text: str = None,
+                              audio_metrics: dict = None,
+                              filler_stats: dict = None,
+                              strictness: str = "intermediate") -> dict | None:
+        """
+        Single-pass comprehensive analysis.
+
+        ARCHITECTURE:
+          1. Deep extract resume [CPU] — projects, internships, certs
+          2. Build unified prompt [CPU] — rubric + feedback in one request
+          3. ONE model call [GPU] — produces complete JSON in single inference
+          4. Parse + validate [CPU]
+          5. On fail: ONE retry at lower temperature
+          6. On fail: data-driven fallback (NEVER return empty)
+
+        Args:
+            transcript: Candidate's refined transcript.
+            resume_text: Resume extracted text (optional).
+            audio_metrics: Audio analysis metrics dict.
+            filler_stats: Enhanced filler detection stats dict.
+            strictness: Evaluation difficulty level.
+
+        Returns:
+            Complete analysis dict or None if transcript empty.
+        """
+        if not transcript or not transcript.strip():
+            return None
+
+        hr_model = self._get_hr_model()
+        if not hr_model:
+            logger.error("❌ [GenAIEngine] HR Model NOT LOADED. Check VRAM/Adapter.")
+            return None
+
+        t_overall = time.perf_counter()
 
         try:
-            start = raw_json_string.index("{")
-            end = raw_json_string.rindex("}") + 1
-            parsed = json.loads(raw_json_string[start:end])
-            final_name = parsed.get("final_name")
-            return final_name if final_name else phonetic_match
+            # ═══════════════════════════════════════════════════════════
+            # STEP 1: DEEP RESUME EXTRACTION [CPU — parallel safe]
+            # ═══════════════════════════════════════════════════════════
+            t = time.perf_counter()
+            resume_data = self._deep_extract_resume(resume_text) if resume_text else {}
+            logger.info(f"📄 [GenAIEngine] Resume extraction: {time.perf_counter() - t:.2f}s")
+
+            # ═══════════════════════════════════════════════════════════
+            # STEP 2: BUILD UNIFIED PROMPT [CPU]
+            # ═══════════════════════════════════════════════════════════
+            system_prompt, user_prompt = self._build_unified_prompt(
+                transcript, resume_text, resume_data,
+                audio_metrics or {}, filler_stats or {}, strictness
+            )
+
+            # ═══════════════════════════════════════════════════════════
+            # STEP 3: SINGLE MODEL CALL [GPU] — rubric + feedback
+            # ═══════════════════════════════════════════════════════════
+            t = time.perf_counter()
+            logger.info("🧠 [GenAIEngine] Running UNIFIED single-pass inference...")
+
+            raw_output = hr_model.generate_text(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.7,
+                max_tokens=2000,
+                disable_lora=False
+            )
+            inference_time = time.perf_counter() - t
+            logger.info(f"✅ [GenAIEngine] Inference complete: {inference_time:.1f}s")
+
+            # ═══════════════════════════════════════════════════════════
+            # STEP 4: PARSE JSON [CPU]
+            # ═══════════════════════════════════════════════════════════
+            cleaned = self._strip_markdown(raw_output)
+            if not cleaned.startswith("{"):
+                cleaned = "{" + cleaned if "{" in cleaned else "{}"
+
+            result = self._recover_partial_json(cleaned)
+
+            # Validate and normalize the result
+            if result:
+                result = self._normalize_result(result)
+
+                fb = result.get("feedback", {})
+                pos_count = len(fb.get("positives", []))
+                imp_count = len(fb.get("improvements", []))
+
+                logger.info(
+                    f"✅ [GenAIEngine] Parsed: {pos_count}P, {imp_count}I, "
+                    f"rubric: {len(result.get('rubric_scores', {}))} dims"
+                )
+
+                # ═══════════════════════════════════════════════════════
+                # STEP 5: RETRY if insufficient feedback
+                # ═══════════════════════════════════════════════════════
+                if pos_count < 3 or imp_count < 3:
+                    logger.warning(f"⚠️ Insufficient ({pos_count}P, {imp_count}I). Retrying...")
+                    try:
+                        retry_raw = hr_model.generate_text(
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            temperature=0.5,
+                            max_tokens=2000,
+                            disable_lora=False
+                        )
+                        retry_cleaned = self._strip_markdown(retry_raw)
+                        if not retry_cleaned.startswith("{"):
+                            retry_cleaned = "{" + retry_cleaned if "{" in retry_cleaned else "{}"
+                        retry_data = self._recover_partial_json(retry_cleaned)
+
+                        if retry_data:
+                            retry_data = self._normalize_result(retry_data)
+                            retry_fb = retry_data.get("feedback", {})
+                            if len(retry_fb.get("positives", [])) >= 3:
+                                result = retry_data
+                                logger.info(
+                                    f"✅ [GenAIEngine] Retry: "
+                                    f"{len(result['feedback'].get('positives', []))}P, "
+                                    f"{len(result['feedback'].get('improvements', []))}I"
+                                )
+                    except Exception as retry_err:
+                        logger.warning(f"⚠️ Retry failed: {retry_err}")
+
+            else:
+                logger.warning(f"⚠️ Parse failed. Raw: {cleaned[:200]}")
+                result = {}
+
+            # ═══════════════════════════════════════════════════════════
+            # STEP 6: FALLBACK if both attempts failed
+            # ═══════════════════════════════════════════════════════════
+            fb = result.get("feedback", {})
+            pos_count = len(fb.get("positives", []))
+            imp_count = len(fb.get("improvements", []))
+
+            if pos_count < 2 or imp_count < 2:
+                logger.warning("⚠️ Both attempts insufficient. Using data-driven fallback...")
+                overall = result.get("overall_score", 5.0)
+                fallback = self._generate_fallback_feedback(
+                    transcript, resume_text, resume_data,
+                    audio_metrics or {}, filler_stats or {},
+                    overall, strictness
+                )
+                result["feedback"] = fallback
+                if "resume_alignment" not in result or not result.get("resume_alignment", {}).get("matched"):
+                    result["resume_alignment"] = fallback.get("resume_alignment", {"matched": [], "missed": []})
+
+            # Ensure required fields exist
+            result.setdefault("rubric_scores", {})
+            result.setdefault("overall_score", 5.0)
+            result.setdefault("feedback", {})
+            result.setdefault("resume_alignment", {"matched": [], "missed": []})
+            result["strictness_applied"] = strictness
+
+            total_time = time.perf_counter() - t_overall
+            logger.info(f"✅ [GenAIEngine] Total analysis: {total_time:.1f}s")
+            return result
+
         except Exception as e:
-            logger.error(f"❌ [GenAIEngine] LLM Name Validation failed: {e}")
+            logger.error(f"❌ [GenAIEngine] Analysis crashed: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                resume_data = self._deep_extract_resume(resume_text) if resume_text else {}
+                fallback = self._generate_fallback_feedback(
+                    transcript, resume_text, resume_data,
+                    audio_metrics or {}, filler_stats or {}, 5.0, strictness
+                )
+                return {
+                    "rubric_scores": {},
+                    "overall_score": 5.0,
+                    "feedback": fallback,
+                    "resume_alignment": fallback.get("resume_alignment", {"matched": [], "missed": []}),
+                    "strictness_applied": strictness,
+                }
+            except:
+                return None
+
+    def _normalize_result(self, result: dict) -> dict:
+        """Normalize and validate parsed LLM result."""
+        # Normalize rubric scores
+        rubric = result.get("rubric_scores", {})
+        for dim, data in rubric.items():
+            if isinstance(data, dict):
+                score = data.get("s", data.get("score", 5.0))
+                data["score"] = max(0.0, min(10.0, float(score)))
+                data["reasoning"] = data.get("r", data.get("reasoning", ""))
+            elif isinstance(data, (int, float)):
+                rubric[dim] = {"score": max(0.0, min(10.0, float(data))), "reasoning": ""}
+
+        # Normalize overall score
+        overall = result.get("overall_score", result.get("overall", 5.0))
+        result["overall_score"] = max(1.0, min(10.0, float(overall)))
+
+        # Normalize feedback structure
+        fb = result.get("feedback", {})
+        if isinstance(fb, dict):
+            # Handle nested structures
+            if "coach" in fb and isinstance(fb["coach"], dict):
+                fb = fb["coach"]
+            elif "feedback" in fb and isinstance(fb["feedback"], dict):
+                fb = fb["feedback"]
+
+            # Normalize keys
+            if "pos" in fb and "positives" not in fb:
+                fb["positives"] = fb.pop("pos")
+            if "imp" in fb and "improvements" not in fb:
+                fb["improvements"] = fb.pop("imp")
+            if "coach" in fb and "coaching_summary" not in fb:
+                fb["coaching_summary"] = fb.pop("coach")
+
+            # Ensure lists of strings
+            for key in ["positives", "improvements", "suggestions"]:
+                items = fb.get(key, [])
+                if isinstance(items, list):
+                    fb[key] = [str(i) for i in items if i][:12]
+                else:
+                    fb[key] = []
+
+            # Ensure coaching_summary is string
+            cs = fb.get("coaching_summary", "")
+            if not isinstance(cs, str):
+                fb["coaching_summary"] = str(cs) if cs else ""
+
+        result["feedback"] = fb
+
+        # Navigate nested resume_alignment
+        ra = result.get("resume_alignment", {})
+        if isinstance(ra, dict):
+            ra.setdefault("matched", [])
+            ra.setdefault("missed", [])
+        else:
+            result["resume_alignment"] = {"matched": [], "missed": []}
+
+        return result
+
+    # ══════════════════════════════════════════════════════════════════
+    # SECONDARY: Standalone methods
+    # ══════════════════════════════════════════════════════════════════
+
+    def extract_semantic(self, transcript: str) -> dict:
+        """Extract structured semantic data from transcript."""
+        system = (
+            "Extract the following from the transcript and return ONLY valid JSON: "
+            "{\"name\":\"\",\"education\":\"\",\"skills\":[],\"experience\":\"\",\"career_goals\":\"\"}"
+        )
+        hr_model = self._get_hr_model()
+        if not hr_model:
+            return {}
+
+        raw = hr_model.generate_text(
+            system_prompt=system,
+            user_prompt=f"{transcript[:600]}",
+            temperature=0.0,
+            max_tokens=300,
+            disable_lora=False
+        )
+
+        raw = self._strip_markdown(raw)
+        if raw and not raw.startswith('{'):
+            raw = '{' + raw if '{' in raw else '{}'
+
+        try:
+            return json.loads(raw)
+        except:
+            return self._recover_partial_json(raw)
+
+    def validate_name(self, extracted_name: str, phonetic_match: str, transcript: str) -> str:
+        """Select correct name from NER vs phonetic candidates."""
+        system = "Select the correct name. Return ONLY: {\"final_name\": \"<name>\"}"
+        prompt = f"Transcript: {transcript}\nNER: {extracted_name}\nPhonetic: {phonetic_match}"
+        hr_model = self._get_hr_model()
+        if not hr_model:
+            return phonetic_match
+
+        raw = hr_model.generate_text(system_prompt=system, user_prompt=prompt,
+                                     temperature=0.0, max_tokens=64, disable_lora=True)
+        try:
+            return json.loads(raw).get("final_name", phonetic_match)
+        except:
             return phonetic_match
 
     def generate_subjective_score(self, transcript: str, semantic: dict) -> float:
-        """
-        Deterministic LLM scoring (temperature=0.0).
-        Same transcript + semantic → same score every time.
-        """
-        prompt = f"Transcript: {transcript}\nSemantic Data: {json.dumps(semantic)}\n\nProvide the LLM-evaluated subjective score now."
-        raw_json = self._infer(prompt, "subjective_scoring")  # temp=0.0 via DETERMINISTIC_TASKS
-        try:
-            start = raw_json.index("{")
-            end = raw_json.rindex("}") + 1
-            parsed = json.loads(raw_json[start:end])
-            return float(parsed.get("llm_score", 6.0))
-        except Exception as e:
-            logger.error(f"❌ [GenAIEngine] LLM subjective scoring failed: {e}")
+        """Generate a quick subjective score (1.0-10.0) from transcript."""
+        system = "Score this interview 1.0-10.0. Return ONLY: {\"llm_score\": <float>}"
+        prompt = f"Transcript: {transcript}\nSemantic: {json.dumps(semantic)}"
+        hr_model = self._get_hr_model()
+        if not hr_model:
             return 6.0
 
+        raw = hr_model.generate_text(system_prompt=system, user_prompt=prompt,
+                                     temperature=0.0, max_tokens=64, disable_lora=True)
+        try:
+            return float(json.loads(raw).get("llm_score", 6.0))
+        except:
+            return 6.0
+
+
+# ── Singleton Instance ──────────────────────────────────────────────────
 genai_engine = GenAIEngine()

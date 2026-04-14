@@ -22,23 +22,22 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
           const attempts = json.data; // newest-first from API
           setRawAttempts(attempts);
 
-          // Transform for charts — need oldest-first (reverse API order)
           const chronological = [...attempts].reverse(); // oldest → newest
           const chartData = chronological.map((item: any, idx: number) => ({
             name: `#${idx + 1}`,
-            score: Math.round(item.score * 10),
-            confidence: Math.round(item.confidence || 0),
-            date: new Date(item.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            fullDate: new Date(item.timestamp).toLocaleString(),
+            score: Math.round(item.scores?.overall * 10 || 0),
+            confidence: Math.round(item.scores?.confidence || 0),
+            date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            fullDate: new Date(item.date).toLocaleString(),
           }));
           setData(chartData);
 
           // Compute stats
-          const scores = attempts.map((a: any) => a.score);
-          const confs = attempts.map((a: any) => a.confidence || 0);
-          const avg_score = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-          const avg_conf = confs.reduce((a: number, b: number) => a + b, 0) / confs.length;
-          const best = Math.max(...scores);
+          const scores = attempts.map((a: any) => a.scores?.overall || 0);
+          const confs = attempts.map((a: any) => a.scores?.confidence || 0);
+          const avg_score = scores.length ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
+          const avg_conf = confs.length ? confs.reduce((a: number, b: number) => a + b, 0) / confs.length : 0;
+          const best = scores.length ? Math.max(...scores) : 0;
           // Trend: newest score (index 0) vs oldest score (last index)
           const trend = scores.length >= 2 ? scores[0] - scores[scores.length - 1] : 0;
           setStats({
@@ -58,16 +57,30 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
     fetchHistory();
   }, []);
 
+  const handleExport = () => {
+    const userId = localStorage.getItem('auth_email') || 'local_demo';
+    window.open(`http://localhost:8000/student/export/${encodeURIComponent(userId)}`, '_blank');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 p-6 md:p-12 font-sans">
-      {/* Navigation */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all mb-8 text-slate-700 font-semibold text-sm"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Dashboard
-      </button>
+      {/* Navigation & Export */}
+      <div className="flex items-center justify-between xl:max-w-7xl mx-auto mb-8">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-slate-700 font-semibold text-sm"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Dashboard
+        </button>
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all font-bold text-sm"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export to Excel
+        </button>
+      </div>
 
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
@@ -219,20 +232,18 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
                       <th className="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Date</th>
                       <th className="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Score</th>
                       <th className="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Confidence</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Improved</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Transcript Preview</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {rawAttempts.slice(0, 10).map((a: any, i: number) => (
-                      <tr key={a.attempt_id} className="hover:bg-slate-50/50 transition-colors">
+                      <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-6 py-3 font-bold text-slate-600">{i + 1}</td>
                         <td className="px-6 py-3 text-slate-500 whitespace-nowrap">
-                          {new Date(a.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {new Date(a.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </td>
                         <td className="px-6 py-3">
-                          <span className={`font-black text-base ${a.score >= 7 ? 'text-emerald-500' : a.score >= 4 ? 'text-amber-500' : 'text-red-400'}`}>
-                            {Math.round(a.score * 10)}
+                          <span className={`font-black text-base ${(a.scores?.overall || 0) >= 7 ? 'text-emerald-500' : (a.scores?.overall || 0) >= 4 ? 'text-amber-500' : 'text-red-400'}`}>
+                            {Math.round((a.scores?.overall || 0) * 10)}
                           </span>
                           <span className="text-slate-300 text-xs">/100</span>
                         </td>
@@ -241,23 +252,11 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
                             <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                               <div
                                 className="h-full rounded-full bg-gradient-to-r from-violet-400 to-violet-600"
-                                style={{ width: `${Math.min(a.confidence || 0, 100)}%` }}
+                                style={{ width: `${Math.min(a.scores?.confidence || 0, 100)}%` }}
                               />
                             </div>
-                            <span className="text-xs text-slate-400 font-medium">{Math.round(a.confidence || 0)}%</span>
+                            <span className="text-xs text-slate-400 font-medium">{Math.round(a.scores?.confidence || 0)}%</span>
                           </div>
-                        </td>
-                        <td className="px-6 py-3">
-                          {a.improved ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">
-                              <TrendingUp className="w-3 h-3" /> Yes
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-3 text-slate-400 text-xs max-w-[200px] truncate">
-                          {a.transcript?.slice(0, 60) || '—'}...
                         </td>
                       </tr>
                     ))}

@@ -1,4 +1,5 @@
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, XCircle } from 'lucide-react';
@@ -7,6 +8,47 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
   // --- Score: backend returns overall_score out of 10, normalize to 100
   const rawScore = resultData?.scores?.overall_score ?? resultData?.score ?? 6;
   const score = Math.round(rawScore <= 10 ? rawScore * 10 : rawScore);
+
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [overrideScore, setOverrideScore] = useState(10);
+  const [feedbackReason, setFeedbackReason] = useState("");
+  const [feedbackStatus, setFeedbackStatus] = useState<"idle"|"loading"|"success"|"error">("idle");
+  const [feedbackMsg, setFeedbackMsg] = useState("");
+
+  const submitFeedback = async () => {
+    if (feedbackReason.split(" ").length < 3) {
+      setFeedbackStatus("error");
+      setFeedbackMsg("Please provide a detailed reason (at least 3 words) so the AI can learn.");
+      return;
+    }
+    setFeedbackStatus("loading");
+    try {
+      const response = await fetch("http://localhost:8000/student/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Use a generic user_id for beta testing locally if not provided
+        body: JSON.stringify({
+          user_id: "beta_tester",
+          transcript: resultData?.refined_transcript || resultData?.raw_transcript || "",
+          features: resultData?.features || [],
+          original_scores: resultData?.scores || {},
+          new_scores: { ...resultData?.scores, overall: overrideScore },
+          reason: feedbackReason
+        })
+      });
+      const data = await response.json();
+      if (data.status === "accepted") {
+        setFeedbackStatus("success");
+      } else {
+        setFeedbackStatus("error");
+        setFeedbackMsg(data.message || "Feedback rejected by AI Gatekeeper.");
+      }
+    } catch(err) {
+      setFeedbackStatus("error");
+      setFeedbackMsg("Failed to connect to server.");
+    }
+  };
+
 
   // --- Confidence: string like "medium", "high", "low" → map to percentage
   const confidenceRaw: string = resultData?.scores?.confidence ?? 'medium';
@@ -151,10 +193,50 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
         </div>
       </Card>
 
-      <div className="flex justify-end gap-4 mt-2">
-        <Button variant="outline" size="lg" className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white" onClick={onHistory}>View History</Button>
-        <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white border-0 shadow-lg shadow-indigo-500/20" onClick={onRetry}>Try Again</Button>
+      <div className="flex justify-between items-center mt-2">
+        <Button variant="ghost" className="text-amber-400 hover:text-amber-300 hover:bg-amber-400/10" onClick={() => setShowFeedback(true)}>
+          ⚠️ Rate this Score (Beta Testers)
+        </Button>
+        <div className="flex justify-end gap-4">
+          <Button variant="outline" size="lg" className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white" onClick={onHistory}>View History</Button>
+          <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white border-0 shadow-lg shadow-indigo-500/20" onClick={onRetry}>Try Again</Button>
+        </div>
       </div>
+
+      <AnimatePresence>
+        {showFeedback && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} 
+            className="mt-6 bg-slate-900 border border-amber-500/30 p-6 rounded-xl relative">
+            <button className="absolute top-4 right-4 text-slate-400 hover:text-white" onClick={() => setShowFeedback(false)}>✕</button>
+            <h3 className="text-lg font-bold text-amber-400 mb-2">Help Train the AI</h3>
+            <p className="text-sm text-slate-300 mb-4">If you feel the AI evaluated this incorrectly, provide the correct score and explain why. The DeepSeek Gatekeeper will validate your reasoning before injecting it into the training pipeline.</p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-1 text-slate-200">What should the True Score be? (1-10)</label>
+                <input type="number" min="1" max="10" step="0.5" className="bg-slate-800 border border-slate-700 rounded-md p-2 w-32 text-white" 
+                  value={overrideScore} onChange={e => setOverrideScore(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1 text-slate-200">Why was the AI wrong? (Required)</label>
+                <textarea rows={3} className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 text-white placeholder:text-slate-500" 
+                  placeholder="E.g. The audio was stuttering heavily but the AI gave me a high score anyway..."
+                  value={feedbackReason} onChange={e => setFeedbackReason(e.target.value)}></textarea>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <Button onClick={submitFeedback} disabled={feedbackStatus === "loading"} className="bg-amber-600 hover:bg-amber-500">
+                  {feedbackStatus === "loading" ? "Analyzing..." : "Submit Feedback"}
+                </Button>
+                {feedbackStatus === "success" && <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Added to Golden Dataset!</span>}
+                {feedbackStatus === "error" && <span className="text-rose-400 font-semibold">{feedbackMsg}</span>}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </motion.div>
+
   );
 }

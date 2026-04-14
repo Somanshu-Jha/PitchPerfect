@@ -38,6 +38,45 @@ class SemanticService:
         logger.info("🧠 [SemanticService] Initializing GenAI router.")
         self.phonetic_service = PhoneticService()
 
+    def _keyword_fallback(self, text: str) -> dict:
+        """
+        Lightweight regex + keyword based extraction when LLM fails.
+        Returns structured dict in the same format as GenAI output.
+        """
+        import re
+        result = {}
+        text_lower = text.lower()
+        
+        # Name extraction: "my name is X" / "I am X" / "I'm X"
+        name_match = re.search(r"(?:my name is|i am|i'm|this is|myself)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", text)
+        if name_match:
+            result["name"] = {"value": name_match.group(1), "confidence": 0.8, "evidence": name_match.group(0)}
+        
+        # Education extraction
+        edu_match = re.search(r"(?:studying|student|enrolled|pursuing|degree|btech|b\.tech|university|college|institute)\s+(.{10,80}?)(?:\.|,|and\s)", text, re.IGNORECASE)
+        if edu_match:
+            result["education"] = {"value": edu_match.group(0).strip("., "), "confidence": 0.7, "evidence": edu_match.group(0)}
+        
+        # Skills extraction — find tech keywords
+        tech_kw = ["python", "java", "javascript", "react", "machine learning", "deep learning",
+                   "ai", "sql", "html", "css", "node", "flutter", "docker", "aws", "git",
+                   "c++", "data science", "tensorflow", "pytorch", "web development"]
+        found_skills = [kw for kw in tech_kw if kw in text_lower]
+        if found_skills:
+            result["skills"] = [{"value": s, "confidence": 0.7, "evidence": f"'{s}' found in transcript"} for s in found_skills[:8]]
+        
+        # Career goals
+        goal_match = re.search(r"(?:goal|aspire|want to|aim|dream|become|future|career)\s+(.{10,80}?)(?:\.|$)", text, re.IGNORECASE)
+        if goal_match:
+            result["career_goals"] = {"value": goal_match.group(0).strip("., "), "confidence": 0.6, "evidence": goal_match.group(0)}
+        
+        # Experience
+        exp_match = re.search(r"(?:worked|working|intern|project|built|developed|team)\s+(.{10,80}?)(?:\.|,|$)", text, re.IGNORECASE)
+        if exp_match:
+            result["experience"] = [{"value": exp_match.group(0).strip("., "), "confidence": 0.6, "evidence": exp_match.group(0)}]
+        
+        return result
+
     def analyze(self, text: str, raw_text: str = "", precomputed_genai: dict = None) -> dict:
         """
         Execute semantic extraction on refined transcript text.
@@ -73,6 +112,12 @@ class SemanticService:
             genai_structured = precomputed_genai
         else:
             genai_structured = genai_engine.extract_semantic(text)
+
+        # ── Step 1b: Keyword-based fallback if LLM extraction failed ─────────────
+        # When the LLM returns empty (0 intents), use regex patterns on the raw text
+        if not genai_structured or len(genai_structured) == 0:
+            logger.warning("⚠️ [SemanticService] LLM extraction empty — using keyword fallback")
+            genai_structured = self._keyword_fallback(text)
 
         # ── Step 2: Normalize structured output ──────────────────────────────────
         clean_structured = {}

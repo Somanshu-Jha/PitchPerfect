@@ -14,6 +14,7 @@ interface RecorderSectionProps {
   onAnalysisStart: () => void;
   onAnalysisComplete: (data: any) => void;
   onScrollToResults: () => void;
+  strictness?: string;
 }
 
 /**
@@ -24,19 +25,29 @@ export default function RecorderSection({
   onAnalysisStart,
   onAnalysisComplete,
   onScrollToResults,
+  strictness = "intermediate",
 }: RecorderSectionProps) {
   const [status, setStatus] = useState<'idle' | 'recording' | 'analyzing'>('idle');
   const [transcript, setTranscript] = useState('');
   const [time, setTime] = useState(0);
   const [error, setError] = useState('');
   const [wordCount, setWordCount] = useState(0);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
+
+  const handleResumeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+       setResumeFile(file);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -151,7 +162,11 @@ export default function RecorderSection({
         console.log('🔥 [RecorderSection] Audio blob ready:', blob.size, 'bytes');
         const fd = new FormData();
         fd.append('file', blob, 'interview.webm');
-        console.log('🔥 [RecorderSection] Sending POST to /student/evaluate...');
+        if (resumeFile) {
+            fd.append('resume', resumeFile, resumeFile.name);
+        }
+        fd.append('strictness', strictness);
+        console.log(`🔥 [RecorderSection] Sending POST to /student/evaluate (Mode: ${strictness})...`);
         const res = await fetch('http://127.0.0.1:8000/student/evaluate', {
           method: 'POST',
           body: fd,
@@ -167,7 +182,12 @@ export default function RecorderSection({
 
         const confMap: Record<string, number> = { low: 30, medium: 60, high: 90 };
         const confRaw = (payload?.scores?.confidence ?? 'medium') as string;
-        const confidence = confMap[confRaw.toLowerCase()] ?? 60;
+        let confidence = payload?.confidence?.dynamic_confidence;
+        if (typeof confidence !== 'number') {
+           confidence = confMap[confRaw.toLowerCase()] ?? 60;
+        } else {
+           confidence = Math.round(confidence);
+        }
 
         // Extract full transcript from backend
         const backendTranscript = payload?.refined_transcript || payload?.raw_transcript || transcript || '';
@@ -194,6 +214,27 @@ export default function RecorderSection({
         
         // Extract audio features for display
         const audioFeatures = payload?.audio_features || {};
+        
+        // Extract 16-dimension rubric breakdown from backend
+        const rubricBreakdown = payload?.rubric_breakdown || [];
+        
+        // Extract structured positives and improvements
+        const positives = (fb?.positives ?? []).map((s: any) => typeof s === 'string' ? s : (s?.text || s?.sentence || String(s)));
+        const improvements = (fb?.improvements ?? []).map((s: any) => typeof s === 'string' ? s : (s?.text || s?.sentence || String(s)));
+        
+        // Extract suggestions / sentence variations from feedback
+        const suggestions = (fb?.suggestions ?? []).map((s: any) => typeof s === 'string' ? s : (s?.text || String(s)));
+        
+        // Extract score deduction reasoning
+        const scoreDeductionReason = payload?.rubric_breakdown
+          ?.filter((d: any) => d.raw_score < 7 && d.reasoning)
+          .map((d: any) => `${d.label}: ${d.reasoning}`)
+          .join(' | ') || '';
+
+        // Extract resume alignment data (matched/missed resume items vs pitch)
+        const resumeAlignment = payload?.resume_alignment || {};
+        const resumeMatched = resumeAlignment?.matched || [];
+        const resumeMissed = resumeAlignment?.missed || [];
 
         result = { 
           score, 
@@ -204,6 +245,15 @@ export default function RecorderSection({
           dlMetrics,
           audioFeatures,
           coachingSummary: fb?.coaching_summary || '',
+          rubricBreakdown,
+          positives,
+          improvements,
+          suggestions,
+          scoreDeductionReason,
+          rubricScore: payload?.scores?.rubric_score ?? null,
+          dlRawScore: payload?.scores?.dl_raw_score ?? null,
+          resumeMatched,
+          resumeMissed,
         };
       } else {
         throw new Error('No audio captured.');
@@ -289,32 +339,43 @@ export default function RecorderSection({
                 </div>
               </div>
 
-              {/* Dynamic Transcript Box — grows with content */}
-              <div className="relative w-full rounded-2xl bg-[#f8fafc] border border-slate-200 shadow-inner overflow-hidden focus-within:ring-4 focus-within:ring-accent/5 focus-within:border-accent/20 transition-all">
+              {/* Dynamic Transcript Box (Replaced with Wave Animation for UX) */}
+              <div className="relative w-full rounded-2xl bg-[#f8fafc] border border-slate-200 shadow-inner overflow-hidden focus-within:ring-4 focus-within:ring-accent/5 focus-within:border-accent/20 transition-all flex flex-col items-center justify-center min-h-[200px]">
                 <button
                   aria-label="recorder text area shadow"
                   className="absolute inset-0 w-full h-full pointer-events-none shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)]"
                 />
-                <div
-                  ref={transcriptRef}
-                  className="w-full p-8 md:p-10 text-xl leading-relaxed bg-transparent border-none appearance-none focus:outline-none text-slate-700 font-semibold whitespace-pre-wrap break-words"
-                  style={{ 
-                    minHeight: '120px',
-                    maxHeight: status === 'recording' ? '400px' : '600px',
-                    overflowY: 'auto',
-                  }}
-                >
-                  {transcript ? (
-                    <span>{transcript}</span>
+                <style>{`
+                  @keyframes ui-wave {
+                    0%, 100% { height: 16px; opacity: 0.5; }
+                    50% { height: 80px; opacity: 1; }
+                  }
+                  .wave-bar {
+                    animation: ui-wave 1s ease-in-out infinite;
+                    width: 8px;
+                    border-radius: 4px;
+                    background-color: #3b82f6; /* accent blue */
+                  }
+                `}</style>
+                <div className="z-10 flex flex-col items-center justify-center w-full">
+                  {status === 'recording' ? (
+                    <div className="flex flex-col items-center gap-8">
+                      <div className="flex items-center gap-2 h-24">
+                        <div className="wave-bar" style={{ animationDelay: '0.0s', height: '30px' }} />
+                        <div className="wave-bar" style={{ animationDelay: '0.1s', height: '60px' }} />
+                        <div className="wave-bar" style={{ animationDelay: '0.2s', height: '80px' }} />
+                        <div className="wave-bar" style={{ animationDelay: '0.3s', height: '50px' }} />
+                        <div className="wave-bar" style={{ animationDelay: '0.4s', height: '40px' }} />
+                        <div className="wave-bar" style={{ animationDelay: '0.5s', height: '70px' }} />
+                        <div className="wave-bar" style={{ animationDelay: '0.6s', height: '30px' }} />
+                      </div>
+                    </div>
+                  ) : status === 'analyzing' ? (
+                     <div className="flex flex-col items-center gap-4">
+                        <span className="text-accent animate-pulse font-bold text-2xl">Processing Audio & Generating Feedback...</span>
+                     </div>
                   ) : (
-                    <span className="text-slate-300">
-                      {status === 'recording' 
-                        ? 'Listening... your transcript will appear here in real-time'
-                        : 'Start speaking, and we\'ll visualize your transcript right here...'}
-                    </span>
-                  )}
-                  {status === 'recording' && transcript && (
-                    <span className="inline-block w-0.5 h-5 bg-accent animate-pulse ml-1 align-middle" />
+                    <span className="text-slate-400 font-semibold text-lg">Start speaking, and we'll track your voice right here...</span>
                   )}
                 </div>
               </div>
@@ -370,13 +431,36 @@ export default function RecorderSection({
                   className="hidden"
                   onChange={handleFileUpload}
                 />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-500 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-accent hover:border-accent/40 transition-colors shadow-sm"
-                >
-                  <Upload className="w-4 h-4" />
-                  Upload Audio File
-                </button>
+                
+                <input
+                  ref={resumeInputRef}
+                  type="file"
+                  accept=".pdf,.txt,.docx"
+                  className="hidden"
+                  onChange={handleResumeUpload}
+                />
+
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-500 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-accent hover:border-accent/40 transition-colors shadow-sm"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Audio
+                  </button>
+                  
+                  <button
+                    onClick={() => resumeInputRef.current?.click()}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-bold border rounded-lg transition-colors shadow-sm ${
+                      resumeFile 
+                        ? 'bg-blue-50 text-blue-600 border-blue-200' 
+                        : 'text-slate-500 bg-white border-slate-200 hover:bg-slate-50 hover:text-accent hover:border-accent/40'
+                    }`}
+                  >
+                    <Upload className="w-4 h-4" />
+                    {resumeFile ? 'Resume Attached ✓' : 'Attach Resume (Optional)'}
+                  </button>
+                </div>
               </div>
             )}
             {status === 'recording' && (
