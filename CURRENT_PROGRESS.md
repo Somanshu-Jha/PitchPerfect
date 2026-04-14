@@ -1,46 +1,29 @@
 # Current Progress
 
-## ✅ Completed
+## Completed
+- End-to-end ASR pipeline (GPU optimized)
+- Transcript validation and stitching
+- Semantic extraction with LLM assistance
+- Hybrid scoring system (rubric + DL model)
+- Adaptive feedback and coaching summaries
+- JWT authentication flows
+- Frontend dashboard integration
 
-* Full ASR pipeline (GPU optimized)
-* Transcript validation and stitching
-* Semantic extraction (LLM)
-* Hybrid scoring system
-* Adaptive feedback system
-* Non-repetitive GenAI logic
-* Authentication system (JWT)
-* Frontend dashboard integration
+## In Progress
+- Real-time streaming enhancements
+- Advanced DL model tuning
+- UX and accessibility improvements
 
----
+## Known Limitations
+- Performance variance on extremely noisy audio
+- Live feedback is transcription-only (no scoring)
+- Training data coverage can be expanded
 
-## 🔄 In Progress
+## Stability Notes
+- Stable for normal usage and moderate noise conditions
+- Reliable for repeated evaluation cycles
 
-* Real-time streaming support
-* Advanced DL model tuning
-* UI improvements
-
----
-
-## ⚠️ Known Limitations
-
-* Performance varies on extremely noisy audio
-* Real-time feedback not yet implemented
-* Model training data can be expanded
-
----
-
-## 🎯 Stability
-
-System is stable for:
-
-* normal usage
-* moderate noise conditions
-* repeated evaluation cycles
-
----
-
-## 📌 Next Focus
-
-* latency optimization
-* real-time analysis
-* dataset expansion
+## Next Focus
+- Latency optimization
+- Real-time analysis and alerts
+- Dataset expansion and benchmarking

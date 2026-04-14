@@ -1,59 +1,62 @@
 # Parameter Schema
 
-## 📥 Input
+## Input (Form Data)
 
-```json
-{
-  "audio_file": "binary"
-}
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file` | audio file | ✅ | Primary interview audio |
+| `resume` | file | Optional | Resume for alignment insights |
+| `user_id` | string | Optional | Defaults to `local_demo` |
+| `strictness` | string | Optional | `beginner` / `intermediate` / `advanced` |
+
+Example (multipart):
+```http
+POST /student/evaluate
 ```
 
----
-
-## 📤 Output
+## Output (JSON)
 
 ```json
 {
-  "transcript": "string",
-  "confidence": 78.5,
+  "user_id": "string",
+  "raw_transcript": "string",
+  "refined_transcript": "string",
   "semantic": {
-    "name": "string",
-    "education": "string",
-    "skills": ["string"],
-    "experience": {
-      "role": "string"
-    },
-    "goals": "string"
+    "structured": {},
+    "intent": {},
+    "confidence_map": {},
+    "evidence_map": {}
   },
+  "audio_features": {},
+  "audio_flags": {},
+  "fillers": [],
+  "filler_stats": {},
   "scores": {
-    "clarity": 7.5,
-    "completeness": 6.8,
-    "structure": 7.2,
-    "confidence": 6.5,
-    "technical_depth": 7.0,
-    "overall_score": 7.1
+    "overall_score": 0,
+    "details": {}
   },
   "feedback": {
     "positives": ["string"],
-    "improvements": ["string"]
+    "improvements": ["string"],
+    "suggestions": ["string"],
+    "coaching_summary": "string"
+  },
+  "resume_alignment": {
+    "matched": [],
+    "missed": []
+  },
+  "processing_time": 0,
+  "timings": {},
+  "english_level": "string",
+  "confidence": {
+    "transcript_confidence": 0,
+    "dynamic_confidence": 0,
+    "confidence_label": "string"
   }
 }
 ```
 
----
+## Notes
 
-## 📊 Internal Features
-
-* speech_rate
-* pause_ratio
-* pitch_variance
-* energy_consistency
-* embedding_vector
-
----
-
-## 🧠 Derived Parameters
-
-* dynamic_confidence
-* english_level
-* semantic_flags
+- The API returns additional diagnostic fields (e.g., timings and rubric breakdowns) to aid observability.
+- Fields may expand as new scoring dimensions and feedback modules are added.
