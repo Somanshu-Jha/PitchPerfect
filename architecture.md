@@ -1,82 +1,70 @@
 # Architecture
 
-## 🧠 High-Level Architecture
+## High-Level Architecture
 
 ```
-Frontend (React)
+Frontend (React + Vite)
         ↓
-API Layer (FastAPI)
+API Gateway (FastAPI)
         ↓
-Speech Pipeline Controller
+Speech Pipeline Orchestrator
         ↓
------------------------------------
-| ASR | NLP | DL Models | Feedback |
------------------------------------
+------------------------------------------
+| ASR | Semantic NLP | Scoring | Feedback |
+------------------------------------------
         ↓
-Database + Response
+Persistence + Response Delivery
 ```
 
----
+## Core Components
 
-## 🔧 Core Components
+### 1. API Layer
+- FastAPI routes for evaluation, history, streaming, and authentication
+- CORS configuration for frontend access
+- JWT-based security and request validation
 
-### 1. Speech Pipeline
+### 2. Speech Pipeline
+- Orchestrates the end-to-end evaluation flow
+- Handles preprocessing, inference, and response formatting
 
-Controls the full execution flow.
+### 3. ASR Engine
+- Faster-Whisper GPU inference
+- Multi-pass decoding with VAD filtering
 
-### 2. ASR Engine
+### 4. Semantic & NLP Layer
+- Structured extraction (intent, profile signals)
+- Resume alignment and evidence mapping
 
-* Faster-Whisper (GPU)
-* Multi-pass decoding
+### 5. Scoring Engine
+- Hybrid scoring: LLM rubric + deep learning signals
+- Generates per-dimension metrics and confidence labels
 
-### 3. NLP Layer
+### 6. Feedback Engine
+- Generates positives, improvements, suggestions, and coaching summary
+- Guards against contradictions and repetition
 
-* Semantic extraction
-* Name correction
+### 7. Data & History
+- SQLite-backed persistence for user attempts
+- History and progress endpoints for analytics
 
-### 4. DL Models
+### 8. Model Manager
+- Handles model loading/unloading and GPU safety
+- Preloads critical models at startup
 
-* Scoring model
-* English level classifier
-
-### 5. Feedback Engine
-
-* LLM-based generation
-* Guard system
-
-### 6. Model Manager
-
-* Loads/unloads models dynamically
-* Prevents GPU overload
-
----
-
-## ⚙️ Hardware Usage
+## Resource Usage
 
 **GPU**
-
-* ASR
-* LLM inference
+- ASR inference
+- LLM-based reasoning
 
 **CPU**
+- Embeddings
+- Feature extraction
+- Persistence and API orchestration
 
-* embeddings
-* feature extraction
-* database
+## Design Principles
 
----
-
-## 🔐 Security
-
-* JWT authentication
-* Protected routes
-* Hashed passwords
-
----
-
-## 📊 Design Principles
-
-* Modular architecture
-* Fault tolerance
-* Low latency
-* Scalable design
+- Modular services with clear separation of concerns
+- Low-latency streaming support
+- Scalable model orchestration and fault tolerance
+- Secure authentication and sanitized inputs

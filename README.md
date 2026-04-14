@@ -1,97 +1,85 @@
-# Introlytics – AI Interview Evaluation Engine
+# PitchPerfect — AI Interview Evaluation Platform
 
-Introlytics is a production-grade AI system designed to evaluate interview responses using speech processing, deep learning, and generative AI. The platform analyzes spoken answers, extracts semantic meaning, evaluates communication quality, and generates personalized feedback.
+PitchPerfect is an AI-driven interview evaluation platform that analyzes spoken responses, extracts structured intent, scores communication quality, and generates actionable coaching feedback. The system combines speech processing, NLP, and deep learning with a React-based dashboard for candidates and reviewers.
 
-## 🚀 Features
+## Key Capabilities
 
-* 🎤 Speech-to-text using optimized Whisper (GPU)
-* 🧠 Semantic understanding (LLM-based)
-* 📊 Hybrid scoring (LLM + Deep Learning)
-* 🗣️ Audio intelligence (confidence, fluency, pitch)
-* 🎯 Adaptive feedback (based on user level)
-* 🔁 Non-repetitive GenAI responses
-* 🛡️ Feedback contradiction guard
-* 🔐 JWT Authentication (Login/Signup)
-* ⚡ GPU optimized pipeline
+- Audio upload and live transcription (WebSocket streaming)
+- Semantic extraction and structured candidate profile
+- Hybrid scoring (LLM rubric + deep learning signals)
+- Audio intelligence (fluency, pitch variance, filler detection)
+- Personalized feedback with coaching summaries
+- Resume alignment insights and history tracking
+- JWT-based authentication and admin controls
 
----
+## System Overview
 
-## 🧠 How It Works
+- **Architecture:** See [architecture.md](architecture.md)
+- **Workflow:** See [workflow.md](workflow.md)
+- **API Schema:** See [parameter_schema.md](parameter_schema.md)
 
-1. User records or uploads audio
-2. Audio is preprocessed and transcribed
-3. Semantic meaning is extracted
-4. Audio + text features are analyzed
-5. Scoring is computed (Hybrid AI)
-6. Feedback is generated dynamically
-7. Results displayed in dashboard
-
----
-
-## 🏗️ Tech Stack
+## Tech Stack
 
 **Backend**
-
-* FastAPI
-* PyTorch
-* Faster-Whisper (CTranslate2)
-* SentenceTransformers
-* SQLite
+- FastAPI
+- PyTorch
+- Faster-Whisper (CTranslate2)
+- SentenceTransformers
+- SQLite (local persistence)
 
 **Frontend**
-
-* React (Vite)
-* Tailwind CSS
+- React + Vite
+- TypeScript
+- Tailwind CSS
 
 **AI/ML**
+- Transformer-based embeddings
+- FFNN-based scoring model
+- LLM-driven rubric feedback
 
-* Transformer models
-* BiLSTM + Dense layers
-* Custom scoring networks
+## Project Structure
 
----
+```
+backend/   FastAPI services, models, and pipelines
+frontend/  React UI and dashboards
+```
 
-## ⚙️ Setup
+## Getting Started
 
+### Prerequisites
+- Python 3.12+
+- Node.js 18+
+
+### Backend
 ```bash
-# Backend
 pip install -r requirements.txt
 uvicorn main:app --reload
+```
 
-# Frontend
+### Frontend
+```bash
+cd frontend
 npm install
 npm run dev
 ```
 
----
+The frontend currently targets `http://localhost:8000` for API calls.
 
-## 🔐 Authentication
+## Core API Endpoints
 
-* JWT-based authentication
-* Secure password hashing (bcrypt)
-* Protected API routes
+- `POST /student/evaluate` — Evaluate audio (optional resume)
+- `GET /student/progress/{user_id}` — Progress summary
+- `GET /student/history/{user_id}?days=30` — Historical attempts
+- `WS /student/stream` — Live ASR transcription
+- `GET /student/health` — Service health check
+- `POST /auth/signup` / `POST /auth/login` — Auth flows
 
----
+## Roadmap & Status
 
-## 📊 System Goals
+- Roadmap: [developement_roadmap.md](developement_roadmap.md)
+- Current status: [CURRENT_PROGRESS.md](CURRENT_PROGRESS.md)
+- Implementation guidance: [implementation_plan.md](implementation_plan.md)
 
-* High transcription accuracy (~97%)
-* Context-aware evaluation
-* Personalized feedback
-* Stable real-time performance
+## Training Summary
 
----
-
-## 📌 Status
-
-System is production-ready with ongoing improvements in:
-
-* real-time streaming
-* advanced scoring models
-* UX enhancements
-
----
-
-## 👨‍💻 Author
-
-Built as a production-grade AI system focusing on real-world interview evaluation.
+- Model training details: [backend/data/training_summary_report.md](backend/data/training_summary_report.md)

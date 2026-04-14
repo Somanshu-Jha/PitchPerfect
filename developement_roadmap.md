@@ -1,51 +1,31 @@
 # Development Roadmap
 
-## Phase 1 – Core System ✅
+## Phase 1 — Core Platform ✅
+- Speech pipeline with ASR and preprocessing
+- Semantic extraction and structured profile
+- Baseline scoring and feedback
 
-* ASR pipeline
-* Semantic extraction
-* Basic scoring
-* Feedback generation
+## Phase 2 — Intelligence Upgrade ✅
+- Hybrid scoring (LLM + DL model)
+- Adaptive feedback logic
+- Non-repetitive response generation
 
----
+## Phase 3 — Production Hardening ✅
+- GPU optimization and caching
+- Retry safety and pipeline observability
+- Authentication and role-based access
 
-## Phase 2 – Intelligence Upgrade ✅
+## Phase 4 — Advanced Features (Next)
+- Real-time streaming feedback (WebSocket)
+- Emotion and sentiment detection
+- Filler-word and pause coaching
 
-* Hybrid scoring
-* DL models
-* Adaptive feedback
-* Non-repetitive responses
-
----
-
-## Phase 3 – Production Hardening ✅
-
-* GPU optimization
-* caching
-* retry safety
-* authentication
-
----
-
-## Phase 4 – Advanced Features (Next)
-
-* Real-time streaming (WebSocket)
-* Live feedback
-* Emotion detection
-* Filler word detection
-
----
-
-## Phase 5 – Scaling
-
-* distributed processing
-* database optimization
-* load balancing
-
----
+## Phase 5 — Scaling
+- Distributed processing and model serving
+- Database optimization
+- Multi-tenant deployment and load balancing
 
 ## Long-Term Vision
-
-* AI interviewer simulation
-* personalized learning system
-* industry-level evaluation engine
+- AI interviewer simulation
+- Personalized learning journeys
+- Industry-grade benchmarking and reporting
