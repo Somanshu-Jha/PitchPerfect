@@ -1,0 +1,3 @@
+src/components/HeroSection.tsx(2,1): error TS6192: All imports in import declaration are unused.
+src/components/HeroSection.tsx(18,10): error TS6133: 'index' is declared but its value is never read.
+src/components/Navbar.tsx(5,1): error TS6192: All imports in import declaration are unused.
