@@ -40,7 +40,7 @@ export default function HistoryDashboard({ onBack }: { onBack: () => void }) {
             {[60, 75, 70, 85, 88].map((score, i) => (
               <div key={i} className="flex flex-col items-center gap-2 group w-12">
                 <div className="w-full bg-gradient-to-t from-indigo-600/20 to-indigo-500 rounded-t-sm transition-all duration-500 group-hover:to-purple-400" style={{ height: `${score}%` }} />
-                <span className="text-[10px] text-slate-500 font-mono">{score}</span>
+                <span className="text-[10px] text-slate-500 dark:text-gray-400 font-mono">{score}</span>
               </div>
             ))}
           </div>
@@ -56,7 +56,7 @@ export default function HistoryDashboard({ onBack }: { onBack: () => void }) {
               </div>
               <div className="flex flex-col gap-1">
                 <span className="font-medium text-slate-200 group-hover:text-indigo-300 transition-colors">{item.role}</span>
-                <div className="flex items-center gap-3 text-xs text-slate-500">
+                <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-gray-400">
                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {item.date}</span>
                    <span>•</span>
                    <span>{item.duration}</span>
@@ -66,7 +66,7 @@ export default function HistoryDashboard({ onBack }: { onBack: () => void }) {
             
             <div className="flex items-center gap-6">
               <div className="text-right flex flex-col">
-                <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">Score</span>
+                <span className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-gray-400 font-semibold mb-1">Score</span>
                 <span className="font-mono text-xl font-bold text-indigo-400">{item.score}</span>
               </div>
             </div>

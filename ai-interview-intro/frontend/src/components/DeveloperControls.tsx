@@ -58,14 +58,14 @@ export default function DeveloperControls({
   if (!isUnlocked) {
     return (
       <div className="max-w-md mx-auto my-12 pointer-events-auto">
-        <div className="saas-card p-8 bg-white/80 backdrop-blur-xl border-slate-200 shadow-xl rounded-3xl">
+        <div className="saas-card p-8 bg-white/80 backdrop-blur-xl border-slate-200 dark:border-white/20 shadow-xl rounded-3xl">
           <div className="flex flex-col items-center gap-6">
-            <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100">
+            <div className="w-16 h-16 rounded-2xl bg-slate-50 dark:bg-black flex items-center justify-center border border-slate-100 dark:border-white/10">
               <Lock className="w-8 h-8 text-slate-400" />
             </div>
             <div className="text-center space-y-2">
-              <h3 className="text-xl font-bold text-slate-800">Developer Access</h3>
-              <p className="text-sm text-slate-500">Enter Passkey to manage Judgement Engine</p>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white">Developer Access</h3>
+              <p className="text-sm text-slate-500 dark:text-gray-400">Enter Passkey to manage Judgement Engine</p>
             </div>
             <form onSubmit={handleUnlock} className="w-full space-y-4">
               <div className="relative">
@@ -75,7 +75,7 @@ export default function DeveloperControls({
                   onChange={(e) => setPasskey(e.target.value)}
                   placeholder="Enter Passkey..."
                   className={`w-full px-5 py-3 rounded-xl border-2 bg-slate-50/50 outline-none transition-all ${
-                    error ? 'border-red-400 animate-shake' : 'border-slate-100 focus:border-accent/30'
+                    error ? 'border-red-400 animate-shake' : 'border-slate-100 dark:border-white/10 focus:border-accent/30'
                   }`}
                 />
                 <Key className="absolute right-4 top-3.5 w-5 h-5 text-slate-300" />
@@ -96,19 +96,19 @@ export default function DeveloperControls({
   return (
     <FadeIn duration={500}>
       <div className="max-w-4xl mx-auto my-12 pointer-events-auto">
-        <div className="saas-card p-10 bg-white border-slate-200 shadow-2xl rounded-[32px] overflow-hidden relative">
+        <div className="saas-card p-10 bg-white dark:bg-black border-slate-200 dark:border-white/20 shadow-2xl rounded-[32px] overflow-hidden relative">
           {/* Header */}
-          <div className="flex items-center justify-between mb-10 pb-6 border-b border-slate-100">
+          <div className="flex items-center justify-between mb-10 pb-6 border-b border-slate-100 dark:border-white/10">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center border border-orange-100">
                 <Settings className="w-6 h-6 text-orange-500" />
               </div>
               <div>
-                <h3 className="font-black text-xl text-slate-800 tracking-tight uppercase">Judgement Engine Calibration</h3>
+                <h3 className="font-black text-xl text-slate-800 dark:text-white tracking-tight uppercase">Judgement Engine Calibration</h3>
                 <p className="text-xs font-bold text-slate-400 tracking-widest uppercase">Backend Team Control Panel</p>
               </div>
             </div>
-            <div className="px-3 py-1 rounded-full bg-slate-100 text-[10px] font-black tracking-widest text-slate-500 uppercase">
+            <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-zinc-900 text-[10px] font-black tracking-widest text-slate-500 dark:text-gray-400 uppercase">
               Secure Session Active
             </div>
           </div>
@@ -127,7 +127,7 @@ export default function DeveloperControls({
                 <div className={`w-3 h-3 rounded-full ${mode.color}`} />
                 <div>
                   <h4 className={`font-bold transition-all ${
-                    currentStrictness === mode.id ? 'text-accent' : 'text-slate-700'
+                    currentStrictness === mode.id ? 'text-accent' : 'text-slate-700 dark:text-gray-200'
                   }`}>
                     {mode.label}
                   </h4>
@@ -144,9 +144,9 @@ export default function DeveloperControls({
             ))}
           </div>
 
-          <div className="mt-8 p-4 bg-slate-50 rounded-xl border border-slate-100">
-            <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-              <span className="font-bold text-slate-700">UNIVERSAL DEPLOYMENT CONTROL:</span> Any changes made here are permanently saved to the backend database. 
+          <div className="mt-8 p-4 bg-slate-50 dark:bg-black rounded-xl border border-slate-100 dark:border-white/10">
+            <p className="text-[11px] text-slate-500 dark:text-gray-400 font-medium leading-relaxed">
+              <span className="font-bold text-slate-700 dark:text-gray-200">UNIVERSAL DEPLOYMENT CONTROL:</span> Any changes made here are permanently saved to the backend database. 
               <span className="font-bold text-red-600"> Extreme Mode</span> is for FAANG-level validation. This setting will immediately apply to ALL users globally across the platform.
             </p>
           </div>

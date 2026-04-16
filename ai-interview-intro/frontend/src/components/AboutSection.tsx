@@ -13,10 +13,10 @@ export default function AboutSection({ onStartRecording }: AboutSectionProps) {
       <div className="max-w-7xl mx-auto px-6 md:px-12">
         <FadeIn delay={0} yOffset={20}>
           <div className="text-center space-y-4 mb-20">
-            <h2 className="text-4xl md:text-5xl font-black tracking-tighter text-slate-800">
+            <h2 className="text-4xl md:text-5xl font-black tracking-tighter text-slate-800 dark:text-white">
               Why Choose PitchPerfect?
             </h2>
-            <p className="text-lg text-slate-500 font-medium max-w-2xl mx-auto">
+            <p className="text-lg text-slate-500 dark:text-gray-400 font-medium max-w-2xl mx-auto">
               Our AI engine delivers precision insights that go beyond simple video recording.
             </p>
           </div>
@@ -68,10 +68,10 @@ export default function AboutSection({ onStartRecording }: AboutSectionProps) {
                   {item.icon}
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-lg font-black text-slate-800 tracking-tight">
+                  <h3 className="text-lg font-black text-slate-800 dark:text-white tracking-tight">
                     {item.title}
                   </h3>
-                  <p className="text-[14px] text-slate-500 font-medium leading-relaxed">
+                  <p className="text-[14px] text-slate-500 dark:text-gray-400 font-medium leading-relaxed">
                     {item.desc}
                   </p>
                 </div>
@@ -82,10 +82,10 @@ export default function AboutSection({ onStartRecording }: AboutSectionProps) {
 
         {/* ── WHO IS IT FOR (3 CARDS) ── */}
         <div className="text-center space-y-4 mb-20">
-          <h2 className="text-4xl md:text-5xl font-black tracking-tighter text-slate-800">
+          <h2 className="text-4xl md:text-5xl font-black tracking-tighter text-slate-800 dark:text-white">
             Who Is It For?
           </h2>
-          <p className="text-lg text-slate-500 font-medium max-w-2xl mx-auto">
+          <p className="text-lg text-slate-500 dark:text-gray-400 font-medium max-w-2xl mx-auto">
             A tool designed for those who aim for a flawless first impression.
           </p>
         </div>
@@ -114,10 +114,10 @@ export default function AboutSection({ onStartRecording }: AboutSectionProps) {
                   {card.icon}
                 </div>
                 <div className="space-y-4">
-                  <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                  <h3 className="text-xl font-black text-slate-800 dark:text-white tracking-tight">
                     {card.title}
                   </h3>
-                  <p className="text-[14px] text-slate-500 font-medium leading-relaxed">
+                  <p className="text-[14px] text-slate-500 dark:text-gray-400 font-medium leading-relaxed">
                     {card.desc}
                   </p>
                 </div>
@@ -137,7 +137,7 @@ export default function AboutSection({ onStartRecording }: AboutSectionProps) {
                 </p>
                 <button
                   onClick={onStartRecording}
-                  className="px-12 py-5 bg-white text-accent font-black rounded-2xl hover:bg-blue-50 hover:-translate-y-1 transition-all shadow-lg"
+                  className="px-12 py-5 bg-white dark:bg-black text-accent font-black rounded-2xl hover:bg-blue-50 hover:-translate-y-1 transition-all shadow-lg"
                 >
                   Let’s Begin
                 </button>

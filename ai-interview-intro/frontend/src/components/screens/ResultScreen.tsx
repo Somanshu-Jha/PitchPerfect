@@ -96,7 +96,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
           <h3 className="text-xs uppercase tracking-[0.2em] text-indigo-300 font-semibold z-10">Overall Score</h3>
           <div className="relative w-40 h-40 flex items-center justify-center z-10">
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="8" className="text-slate-800" />
+              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="8" className="text-slate-800 dark:text-white" />
               <motion.circle
                 cx="50" cy="50" r="45"
                 fill="none"
@@ -128,7 +128,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <div className="relative w-28 h-28 flex items-center justify-center">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="10" className="text-slate-800" />
+                <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="10" className="text-slate-800 dark:text-white" />
                 <motion.circle
                   cx="50" cy="50" r="42"
                   fill="none"
@@ -172,7 +172,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
                 <p className="text-slate-300 text-sm leading-relaxed">{item}</p>
               </div>
             )) : (
-              <p className="text-slate-500 text-sm italic">No positive feedback recorded.</p>
+              <p className="text-slate-500 dark:text-gray-400 text-sm italic">No positive feedback recorded.</p>
             )}
           </div>
 
@@ -187,7 +187,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
                 <p className="text-slate-300 text-sm leading-relaxed">{item}</p>
               </div>
             )) : (
-              <p className="text-slate-500 text-sm italic">All areas covered!</p>
+              <p className="text-slate-500 dark:text-gray-400 text-sm italic">All areas covered!</p>
             )}
           </div>
         </div>

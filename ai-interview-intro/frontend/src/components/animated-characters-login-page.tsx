@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Eye, EyeOff, Mail, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-
+import logo from "../assets/logo.png";
 
 interface PupilProps {
   size?: number;
@@ -401,9 +401,17 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
       {/* Left Content Section */}
       <div className="relative hidden lg:flex flex-col justify-between bg-gradient-to-br from-primary/90 via-primary to-primary/80 p-12 text-primary-foreground">
         <div className="relative z-20">
-          <div className="flex items-center gap-2 text-lg font-semibold">
-            <div className="size-8 rounded-lg bg-primary-foreground/10 backdrop-blur-sm flex items-center justify-center">
-              <Sparkles className="size-4" />
+          <div className="flex items-center gap-3 text-lg font-semibold">
+            <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+              {/* 🌈 STRONG VISIBLE GLOW */}
+              <div className="absolute inset-0 rounded-full pointer-events-none z-0">
+                <div className="absolute inset-0 rounded-full blur-[12px] bg-blue-500/60 dark:bg-blue-400/50 opacity-80"></div>
+                <div className="absolute inset-0 rounded-full blur-[16px] bg-yellow-400/50 dark:bg-yellow-300/40 opacity-80"></div>
+              </div>
+              {/* 🚀 Logo */}
+              <div className="relative z-10 w-8 h-8 rounded-full overflow-hidden flex items-center justify-center transition-transform duration-300 hover:scale-110">
+                <img src={logo} alt="PitchPerfect Logo" className="w-full h-full object-contain" />
+              </div>
             </div>
             <span>PitchPerfect</span>
           </div>
@@ -599,12 +607,20 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
       </div>
 
       {/* Right Login/Signup Section */}
-      <div className="flex items-center justify-center p-8 bg-background">
+      <div className="flex items-center justify-center p-8 bg-background dark:bg-black">
         <div className="w-full max-w-[420px]">
           {/* Mobile Logo */}
-          <div className="lg:hidden flex items-center justify-center gap-2 text-lg font-semibold mb-12">
-            <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Sparkles className="size-4 text-primary" />
+          <div className="lg:hidden flex items-center justify-center gap-3 text-lg font-semibold mb-12">
+            <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+              {/* 🌈 STRONG VISIBLE GLOW */}
+              <div className="absolute inset-0 rounded-full pointer-events-none z-0">
+                <div className="absolute inset-0 rounded-full blur-[12px] bg-blue-500/60 dark:bg-blue-400/50 opacity-80"></div>
+                <div className="absolute inset-0 rounded-full blur-[16px] bg-yellow-400/50 dark:bg-yellow-300/40 opacity-80"></div>
+              </div>
+              {/* 🚀 Logo */}
+              <div className="relative z-10 w-8 h-8 rounded-full overflow-hidden flex items-center justify-center transition-transform duration-300 hover:scale-110">
+                <img src={logo} alt="PitchPerfect Logo" className="w-full h-full object-contain" />
+              </div>
             </div>
             <span>PitchPerfect</span>
           </div>
@@ -635,7 +651,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                   onFocus={() => setIsTyping(true)}
                   onBlur={() => setIsTyping(false)}
                   required
-                  className="h-12 bg-background border-border/60 focus:border-primary"
+                  className="h-12 bg-background dark:bg-black border-border/60 focus:border-primary"
                 />
               </div>
             )}
@@ -652,7 +668,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                 onFocus={() => setIsTyping(true)}
                 onBlur={() => setIsTyping(false)}
                 required
-                className="h-12 bg-background border-border/60 focus:border-primary"
+                className="h-12 bg-background dark:bg-black border-border/60 focus:border-primary"
               />
             </div>
 
@@ -666,7 +682,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                   value={password}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                   required
-                  className="h-12 pr-10 bg-background border-border/60 focus:border-primary"
+                  className="h-12 pr-10 bg-background dark:bg-black border-border/60 focus:border-primary"
                 />
                 <button
                   type="button"
@@ -694,7 +710,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                     value={confirmPassword}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}
                     required
-                    className="h-12 pr-10 bg-background border-border/60 focus:border-primary"
+                    className="h-12 pr-10 bg-background dark:bg-black border-border/60 focus:border-primary"
                   />
                 </div>
               </div>
@@ -750,7 +766,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
             <div className="mt-6">
               <Button 
                 variant="outline" 
-                className="w-full h-12 bg-background border-border/60 hover:bg-accent"
+                className="w-full h-12 bg-background dark:bg-black border-border/60 hover:bg-accent"
                 type="button"
               >
                 <Mail className="mr-2 size-5" />

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ScoreCard from '../ScoreCard';
 import ConfidenceMeter from '../ConfidenceMeter';
 import FadeIn from '../FadeIn';
+import InsightGame from '../InsightGame';
 
 interface ResultSectionProps {
   data: {
@@ -25,6 +26,8 @@ interface ResultSectionProps {
   } | null;
   isLoading: boolean;
   onRetry: () => void;
+  resumeHint?: string;
+  transcriptHint?: string;
 }
 
 /** Category badge colors */
@@ -50,7 +53,7 @@ function FeedbackItem({ text, type }: { text: string; type: 'strength' | 'improv
   const [expanded, setExpanded] = useState(true);
   const isStrength = type === 'strength';
   const { category, cleanText } = parseCategory(text);
-  const catColors = category ? CATEGORY_COLORS[category] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' } : null;
+  const catColors = category ? CATEGORY_COLORS[category] || { bg: 'bg-gray-50', text: 'text-gray-600 dark:text-gray-300', border: 'border-gray-200' } : null;
 
   return (
     <li 
@@ -71,7 +74,7 @@ function FeedbackItem({ text, type }: { text: string; type: 'strength' | 'improv
               {category}
             </span>
           )}
-          <p className={`text-[15px] leading-relaxed text-slate-800 font-semibold transition-all ${expanded ? '' : 'line-clamp-2'}`}>
+          <p className={`text-[15px] leading-relaxed text-slate-800 dark:text-white font-semibold transition-all ${expanded ? '' : 'line-clamp-2'}`}>
             {cleanText}
           </p>
         </div>
@@ -89,30 +92,38 @@ function FeedbackItem({ text, type }: { text: string; type: 'strength' | 'improv
 /**
  * ResultSection – performance dashboard matching the original two-column 
  * "AI Feedback Report" layout with Key Strengths and Focus Areas side-by-side.
+ * Now includes an interactive Chrome Dino-style game during the loading state.
  */
-export default function ResultSection({ data, isLoading, onRetry }: ResultSectionProps) {
+export default function ResultSection({ data, isLoading, onRetry, resumeHint, transcriptHint }: ResultSectionProps) {
+  const [gameWaiting, setGameWaiting] = useState(false);
   
-  if (isLoading) {
+  // When analysis starts, activate the game waiting mode
+  // This keeps the game visible even after analysis completes
+  useEffect(() => {
+    if (isLoading) {
+      setGameWaiting(true);
+    }
+  }, [isLoading]);
+  
+  // When analysis completes but user is still in the game, hold results
+  const analysisReady = !isLoading && data !== null && gameWaiting;
+  
+  if (isLoading || gameWaiting) {
     return (
-      <section className="min-h-screen py-24 flex items-center justify-center bg-transparent w-full">
-        <div className="flex flex-col items-center gap-6">
-          <div className="relative w-16 h-16 flex items-center justify-center">
-             <div className="absolute inset-0 rounded-full border-4 border-slate-100" />
-             <div className="absolute inset-0 rounded-full border-4 border-accent border-t-transparent animate-spin" />
-          </div>
-          <span className="text-xl font-black tracking-widest text-accent uppercase animate-pulse">
-             Extracting Insights...
-          </span>
-        </div>
-      </section>
+      <InsightGame
+        resumeHint={resumeHint}
+        transcriptHint={transcriptHint}
+        analysisComplete={!isLoading && data !== null}
+        onViewResults={() => setGameWaiting(false)}
+      />
     );
   }
 
   if (!data) {
     return (
       <section id="results" className="min-h-[60vh] py-24 px-6 md:px-12 w-full flex items-center justify-center">
-        <div className="w-full max-w-6xl mx-auto border-2 border-dashed border-slate-200 rounded-[32px] p-12 md:p-20 flex flex-col items-center text-center gap-8 bg-white/40">
-           <div className="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
+        <div className="w-full max-w-6xl mx-auto border-2 border-dashed border-slate-200 dark:border-white/20 rounded-[32px] p-12 md:p-20 flex flex-col items-center text-center gap-8 bg-white/40">
+           <div className="w-20 h-20 rounded-full bg-slate-50 dark:bg-black flex items-center justify-center text-slate-300">
              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                <path d="M12 20h.01"/><path d="M12 16h.01"/><path d="M12 12h.01"/><path d="M12 8h.01"/><path d="M12 4h.01"/>
              </svg>
@@ -122,11 +133,11 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
              <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Record your introduction to see analysis</p>
            </div>
            <div className="grid grid-cols-2 gap-8 w-full max-w-md opacity-40 grayscale">
-              <div className="p-6 rounded-2xl bg-white border border-slate-100 flex flex-col gap-1 items-center">
+              <div className="p-6 rounded-2xl bg-white dark:bg-black border border-slate-100 dark:border-white/10 flex flex-col gap-1 items-center">
                 <span className="text-xs font-black text-slate-400 uppercase">Score</span>
                 <span className="text-4xl font-black text-slate-300">--</span>
               </div>
-              <div className="p-6 rounded-2xl bg-white border border-slate-100 flex flex-col gap-1 items-center">
+              <div className="p-6 rounded-2xl bg-white dark:bg-black border border-slate-100 dark:border-white/10 flex flex-col gap-1 items-center">
                 <span className="text-xs font-black text-slate-400 uppercase">Confidence</span>
                 <span className="text-4xl font-black text-slate-300">--</span>
               </div>
@@ -170,10 +181,10 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
 
         <FadeIn delay={0} yOffset={20}>
           <div className="text-center md:text-left space-y-4 mb-4">
-            <h2 className="text-5xl md:text-6xl font-black tracking-tighter text-slate-800">
+            <h2 className="text-5xl md:text-6xl font-black tracking-tighter text-slate-800 dark:text-white">
               Your Performance
             </h2>
-            <p className="text-xl text-slate-500 font-medium max-w-2xl">
+            <p className="text-xl text-slate-500 dark:text-gray-400 font-medium max-w-2xl">
               Deep analysis of your interview introduction — transcript, vocal analysis, and detailed scoring.
             </p>
           </div>
@@ -197,7 +208,7 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
                 <span className="text-lg">🎯</span>
                 <span className="font-semibold text-sm uppercase tracking-wider text-blue-600">AI Coaching Summary</span>
               </div>
-              <p className="text-[15px] text-slate-700 leading-relaxed font-medium">
+              <p className="text-[15px] text-slate-700 dark:text-gray-200 leading-relaxed font-medium">
                 {coachingSummary}
               </p>
             </div>
@@ -229,7 +240,7 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center gap-2 mb-2 px-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-green-500 opacity-80" />
-                    <h4 className="text-sm font-bold tracking-wide uppercase text-slate-700">
+                    <h4 className="text-sm font-bold tracking-wide uppercase text-slate-700 dark:text-gray-200">
                       Key Strengths
                     </h4>
                     <span className="ml-auto text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
@@ -244,7 +255,7 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-sm italic text-slate-500 opacity-75 p-3">
+                      <p className="text-sm italic text-slate-500 dark:text-gray-400 opacity-75 p-3">
                         No distinct strengths detected.
                       </p>
                     )}
@@ -255,7 +266,7 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center gap-2 mb-2 px-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-red-500 opacity-80" />
-                    <h4 className="text-sm font-bold tracking-wide uppercase text-slate-700">
+                    <h4 className="text-sm font-bold tracking-wide uppercase text-slate-700 dark:text-gray-200">
                       Focus Areas
                     </h4>
                     <span className="ml-auto text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
@@ -270,7 +281,7 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-sm italic text-slate-500 opacity-75 p-3">
+                      <p className="text-sm italic text-slate-500 dark:text-gray-400 opacity-75 p-3">
                         No major area for improvement detected.
                       </p>
                     )}
@@ -352,7 +363,7 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
                 {suggestions.map((sug, i) => (
                   <li key={i} className="flex gap-4 p-4 bg-white/60 border border-violet-100 rounded-xl shadow-sm">
                     <span className="text-violet-500 font-bold mt-0.5">💡</span>
-                    <p className="text-sm text-slate-700 font-medium leading-relaxed italic border-l-2 border-violet-300 pl-3">"{sug}"</p>
+                    <p className="text-sm text-slate-700 dark:text-gray-200 font-medium leading-relaxed italic border-l-2 border-violet-300 pl-3">"{sug}"</p>
                   </li>
                 ))}
               </ul>
@@ -374,13 +385,13 @@ export default function ResultSection({ data, isLoading, onRetry }: ResultSectio
               </div>
               <div className="grid gap-3">
                 {Object.entries(audioReasoning).map(([key, reasoning]) => (
-                  <div key={key} className="flex gap-3 p-4 rounded-xl bg-white/50 border border-slate-100">
+                  <div key={key} className="flex gap-3 p-4 rounded-xl bg-white/50 border border-slate-100 dark:border-white/10">
                     <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center">
                       <span className="text-teal-600 text-xs font-black uppercase">{key.charAt(0)}</span>
                     </div>
                     <div>
-                      <h5 className="text-xs font-black uppercase tracking-wide text-slate-500 mb-1">{key}</h5>
-                      <p className="text-sm text-slate-700 leading-relaxed">{reasoning}</p>
+                      <h5 className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-gray-400 mb-1">{key}</h5>
+                      <p className="text-sm text-slate-700 dark:text-gray-200 leading-relaxed">{reasoning}</p>
                     </div>
                   </div>
                 ))}

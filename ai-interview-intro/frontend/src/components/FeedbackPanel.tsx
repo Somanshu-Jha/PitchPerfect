@@ -21,7 +21,7 @@ function FeedbackItem({ text, type }: { text: string; type: 'strength' | 'improv
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
           )}
         </div>
-        <p className={`text-[15px] leading-relaxed text-slate-800 font-semibold flex-1 transition-all ${expanded ? '' : 'line-clamp-2'}`}>
+        <p className={`text-[15px] leading-relaxed text-slate-800 dark:text-white font-semibold flex-1 transition-all ${expanded ? '' : 'line-clamp-2'}`}>
           {text}
         </p>
         <svg 
@@ -69,7 +69,7 @@ export default function FeedbackPanel({ feedback }: FeedbackPanelProps) {
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2 mb-2 px-2">
             <span className="w-2.5 h-2.5 rounded-full bg-success opacity-80" />
-            <h4 className="text-sm font-bold tracking-wide uppercase text-slate-700">
+            <h4 className="text-sm font-bold tracking-wide uppercase text-slate-700 dark:text-gray-200">
               Key Strengths
             </h4>
             <span className="ml-auto text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
@@ -84,7 +84,7 @@ export default function FeedbackPanel({ feedback }: FeedbackPanelProps) {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm italic text-slate-500 opacity-75 p-3">
+              <p className="text-sm italic text-slate-500 dark:text-gray-400 opacity-75 p-3">
                 No distinct strengths detected.
               </p>
             )}
@@ -95,7 +95,7 @@ export default function FeedbackPanel({ feedback }: FeedbackPanelProps) {
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2 mb-2 px-2">
             <span className="w-2.5 h-2.5 rounded-full bg-error opacity-80" />
-            <h4 className="text-sm font-bold tracking-wide uppercase text-slate-700">
+            <h4 className="text-sm font-bold tracking-wide uppercase text-slate-700 dark:text-gray-200">
               Focus Areas
             </h4>
             <span className="ml-auto text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
@@ -113,7 +113,7 @@ export default function FeedbackPanel({ feedback }: FeedbackPanelProps) {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm italic text-slate-500 opacity-75 p-3">
+              <p className="text-sm italic text-slate-500 dark:text-gray-400 opacity-75 p-3">
                 No major area for improvement detected.
               </p>
             )}

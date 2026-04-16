@@ -127,3 +127,5 @@ task.md
 walkthrough.md
 _test_*.py
 backend_files.json
+push_output.txt
+frontend/scratch/

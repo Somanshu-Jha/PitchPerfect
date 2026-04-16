@@ -68,7 +68,7 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
       <div className="flex items-center justify-between xl:max-w-7xl mx-auto mb-8">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-slate-700 font-semibold text-sm"
+          className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-black border border-slate-200 dark:border-white/20 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-slate-700 dark:text-gray-200 font-semibold text-sm"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Dashboard
@@ -90,8 +90,8 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
               <History className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-4xl font-black text-slate-800 tracking-tight">Performance History</h1>
-              <p className="text-slate-500 font-medium mt-1">Last 30 days • Track your progress over time</p>
+              <h1 className="text-4xl font-black text-slate-800 dark:text-white tracking-tight">Performance History</h1>
+              <p className="text-slate-500 dark:text-gray-400 font-medium mt-1">Last 30 days • Track your progress over time</p>
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
@@ -108,45 +108,45 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
             </div>
           </div>
         ) : data.length === 0 ? (
-          <div className="bg-white p-16 text-center rounded-3xl border border-slate-200 shadow-sm">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-slate-100 flex items-center justify-center">
+          <div className="bg-white dark:bg-black p-16 text-center rounded-3xl border border-slate-200 dark:border-white/20 shadow-sm">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center">
               <History className="w-10 h-10 text-slate-300" />
             </div>
-            <h2 className="text-2xl font-black text-slate-600 mb-2">No Attempts Yet</h2>
+            <h2 className="text-2xl font-black text-slate-600 dark:text-gray-300 mb-2">No Attempts Yet</h2>
             <p className="text-slate-400 max-w-md mx-auto">Record your first AI interview to start tracking your progress!</p>
           </div>
         ) : (
           <>
             {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <div className="bg-white dark:bg-black rounded-2xl p-5 border border-slate-100 dark:border-white/10 shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
                   <Award className="w-4 h-4 text-amber-500" />
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Best Score</span>
                 </div>
-                <span className="text-3xl font-black text-slate-800">{stats.best}<span className="text-lg text-slate-400">/100</span></span>
+                <span className="text-3xl font-black text-slate-800 dark:text-white">{stats.best}<span className="text-lg text-slate-400">/100</span></span>
               </div>
-              <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <div className="bg-white dark:bg-black rounded-2xl p-5 border border-slate-100 dark:border-white/10 shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
                   <TrendingUp className="w-4 h-4 text-indigo-500" />
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Avg Score</span>
                 </div>
-                <span className="text-3xl font-black text-slate-800">{stats.avg_score}<span className="text-lg text-slate-400">/100</span></span>
+                <span className="text-3xl font-black text-slate-800 dark:text-white">{stats.avg_score}<span className="text-lg text-slate-400">/100</span></span>
               </div>
-              <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <div className="bg-white dark:bg-black rounded-2xl p-5 border border-slate-100 dark:border-white/10 shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-violet-500" />
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Avg Conf</span>
                 </div>
-                <span className="text-3xl font-black text-slate-800">{stats.avg_conf}<span className="text-lg text-slate-400">%</span></span>
+                <span className="text-3xl font-black text-slate-800 dark:text-white">{stats.avg_conf}<span className="text-lg text-slate-400">%</span></span>
               </div>
-              <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+              <div className="bg-white dark:bg-black rounded-2xl p-5 border border-slate-100 dark:border-white/10 shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
                   <Calendar className="w-4 h-4 text-emerald-500" />
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Attempts</span>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black text-slate-800">{stats.total}</span>
+                  <span className="text-3xl font-black text-slate-800 dark:text-white">{stats.total}</span>
                   {stats.trend > 0 && (
                     <span className="text-sm font-bold text-emerald-500">+{stats.trend}↑</span>
                   )}
@@ -160,8 +160,8 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
             {/* Charts */}
             <div className="grid lg:grid-cols-2 gap-6">
               {/* Confidence Line Chart */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <h3 className="text-lg font-bold text-slate-800 mb-1">Confidence Progression</h3>
+              <div className="bg-white dark:bg-black p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-white/10">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-1">Confidence Progression</h3>
                 <p className="text-xs text-slate-400 mb-5">AI-measured delivery confidence over time</p>
                 <div className="h-[280px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -189,8 +189,8 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
               </div>
 
               {/* Score Bar Chart */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <h3 className="text-lg font-bold text-slate-800 mb-1">Score Performance</h3>
+              <div className="bg-white dark:bg-black p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-white/10">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-1">Score Performance</h3>
                 <p className="text-xs text-slate-400 mb-5">Overall evaluation score per attempt</p>
                 <div className="h-[280px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -220,9 +220,9 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
             </div>
 
             {/* Recent Attempts Table */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100">
-                <h3 className="text-lg font-bold text-slate-800">Recent Attempts</h3>
+            <div className="bg-white dark:bg-black rounded-2xl shadow-sm border border-slate-100 dark:border-white/10 overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 dark:border-white/10">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white">Recent Attempts</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -237,8 +237,8 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
                   <tbody className="divide-y divide-slate-50">
                     {rawAttempts.slice(0, 10).map((a: any, i: number) => (
                       <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-3 font-bold text-slate-600">{i + 1}</td>
-                        <td className="px-6 py-3 text-slate-500 whitespace-nowrap">
+                        <td className="px-6 py-3 font-bold text-slate-600 dark:text-gray-300">{i + 1}</td>
+                        <td className="px-6 py-3 text-slate-500 dark:text-gray-400 whitespace-nowrap">
                           {new Date(a.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </td>
                         <td className="px-6 py-3">
@@ -249,7 +249,7 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
                         </td>
                         <td className="px-6 py-3">
                           <div className="flex items-center gap-2">
-                            <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="w-16 h-1.5 bg-slate-100 dark:bg-zinc-900 rounded-full overflow-hidden">
                               <div
                                 className="h-full rounded-full bg-gradient-to-r from-violet-400 to-violet-600"
                                 style={{ width: `${Math.min(a.scores?.confidence || 0, 100)}%` }}

@@ -75,7 +75,7 @@ export default function DeviceMock() {
 
       {/* Inner card: overflow-hidden to correctly clip content to rounded corners */}
       <div
-        className="relative z-10 w-full select-none bg-white rounded-[40px] transition-all duration-500 overflow-hidden border border-slate-100/50"
+        className="relative z-10 w-full select-none bg-white dark:bg-black rounded-[40px] transition-all duration-500 overflow-hidden border border-slate-100/50"
         style={{
           boxShadow: `
             0 30px 80px rgba(0,0,0,0.15),
@@ -111,9 +111,9 @@ export default function DeviceMock() {
         {/* Header Status Bar */}
         <div className="relative flex items-center justify-between border-b border-slate-50 p-6 z-10">
           <div className="flex gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-200" />
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-zinc-800" />
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-zinc-800" />
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-zinc-800" />
           </div>
           <div className="flex items-center gap-3">
             {(step === 'recording' || step === 'typing') && (
@@ -123,7 +123,7 @@ export default function DeviceMock() {
               </div>
             )}
             <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full transition-all duration-300 ${step === 'recording' || step === 'typing' ? 'bg-error animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.4)]' : 'bg-slate-200'
+              <div className={`w-2 h-2 rounded-full transition-all duration-300 ${step === 'recording' || step === 'typing' ? 'bg-error animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.4)]' : 'bg-slate-200 dark:bg-zinc-800'
                 }`} />
               <span className="text-[10px] font-black tracking-[0.2em] uppercase text-slate-400">
                 {step === 'standby' || step === 'cursorMove' || step === 'click' ? 'STANDBY' :
@@ -139,18 +139,18 @@ export default function DeviceMock() {
 
           {(step === 'standby' || step === 'cursorMove' || step === 'click') && (
             <div className="text-center space-y-3 opacity-30 animate-in fade-in duration-500">
-              <div className="w-14 h-14 rounded-full bg-slate-50 border border-slate-100 mx-auto flex items-center justify-center text-slate-300">
+              <div className="w-14 h-14 rounded-full bg-slate-50 dark:bg-black border border-slate-100 dark:border-white/10 mx-auto flex items-center justify-center text-slate-300">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" />
                 </svg>
               </div>
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">System Ready</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500 dark:text-gray-400">System Ready</p>
             </div>
           )}
 
           {(step === 'recording' || step === 'typing') && (
             <div className="space-y-4 animate-in fade-in duration-300">
-              <div className="text-[16px] leading-[1.6] text-slate-700 font-semibold tracking-tight">
+              <div className="text-[16px] leading-[1.6] text-slate-700 dark:text-gray-200 font-semibold tracking-tight">
                 {displayText}
                 {step === 'typing' && (
                   <span className="inline-block w-[2px] h-4 bg-accent/60 ml-1.5 animate-cursor-blink align-middle" />
@@ -195,7 +195,7 @@ export default function DeviceMock() {
               <div className="flex justify-between items-end border-b border-slate-50 pb-5">
                 <div className="flex flex-col gap-1">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">Quality Score</span>
-                  <span className="text-5xl font-black tracking-tighter text-slate-800 tabular-nums leading-none">82</span>
+                  <span className="text-5xl font-black tracking-tighter text-slate-800 dark:text-white tabular-nums leading-none">82</span>
                 </div>
                 <div className="flex items-end gap-1 mb-1">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
@@ -208,7 +208,7 @@ export default function DeviceMock() {
                 <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-success flex-shrink-0 border border-green-200">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                 </div>
-                <p className="text-[12px] font-bold text-slate-600 leading-tight">Good clarity and structure.</p>
+                <p className="text-[12px] font-bold text-slate-600 dark:text-gray-300 leading-tight">Good clarity and structure.</p>
               </div>
             </div>
           )}
@@ -220,8 +220,8 @@ export default function DeviceMock() {
             className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 shadow-inner ${step === 'recording' || step === 'typing'
               ? 'bg-red-50 text-error border-2 border-error/40 scale-90 ring-4 ring-red-500/5'
               : isClicking
-                ? 'bg-slate-50 scale-95 border border-slate-200'
-                : 'bg-white border text-slate-300 shadow-[0_4px_10px_rgba(0,0,0,0.02)]'
+                ? 'bg-slate-50 dark:bg-black scale-95 border border-slate-200 dark:border-white/20'
+                : 'bg-white dark:bg-black border text-slate-300 shadow-[0_4px_10px_rgba(0,0,0,0.02)]'
               }`}>
             {step === 'recording' || step === 'typing' ? (
               <div className="w-4 h-4 bg-error rounded shadow-sm" />
@@ -253,7 +253,7 @@ export default function DeviceMock() {
 
         {/* 3. The Pure White Center Ellipse (The crisp, glowing solid light source) */}
         <div
-          className="absolute top-[1px] w-[45%] h-[8px] bg-white rounded-[100%] blur-[1px]"
+          className="absolute top-[1px] w-[45%] h-[8px] bg-white dark:bg-black rounded-[100%] blur-[1px]"
           style={{
              boxShadow: '0 0 15px 4px rgba(255, 255, 255, 0.9), 0 0 30px 8px rgba(100, 150, 255, 0.6)'
           }}

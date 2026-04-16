@@ -15,6 +15,8 @@ interface RecorderSectionProps {
   onAnalysisComplete: (data: any) => void;
   onScrollToResults: () => void;
   strictness?: string;
+  onResumeHint?: (name: string) => void;
+  onTranscriptHint?: (text: string) => void;
 }
 
 /**
@@ -26,6 +28,8 @@ export default function RecorderSection({
   onAnalysisComplete,
   onScrollToResults,
   strictness = "intermediate",
+  onResumeHint,
+  onTranscriptHint,
 }: RecorderSectionProps) {
   const [status, setStatus] = useState<'idle' | 'recording' | 'analyzing'>('idle');
   const [transcript, setTranscript] = useState('');
@@ -46,6 +50,7 @@ export default function RecorderSection({
     const file = e.target.files?.[0];
     if (file) {
        setResumeFile(file);
+       onResumeHint?.(file.name);
     }
   };
 
@@ -135,6 +140,7 @@ export default function RecorderSection({
   const stopAndAnalyze = async () => {
     setStatus('analyzing');
     onAnalysisStart();
+    onTranscriptHint?.(transcript);
     onScrollToResults();
 
     if (wsRef.current) {
@@ -294,10 +300,10 @@ export default function RecorderSection({
     >
       <FadeIn duration={600} yOffset={30}>
         <div className="text-center mb-16 space-y-4">
-          <h2 className="text-3xl md:text-5xl font-black tracking-tighter text-slate-800">
+          <h2 className="text-3xl md:text-5xl font-black tracking-tighter text-slate-800 dark:text-white">
             RECORDING STUDIO
           </h2>
-          <p className="text-slate-500 font-medium text-lg max-w-xl mx-auto">
+          <p className="text-slate-500 dark:text-gray-400 font-medium text-lg max-w-xl mx-auto">
             Introduce yourself just like you would in a real interview. We'll capture your transcript in real-time.
           </p>
         </div>
@@ -309,12 +315,12 @@ export default function RecorderSection({
           <div className="relative group w-full">
             <div className={`absolute -inset-4 bg-accent opacity-[0.03] blur-3xl rounded-[40px] transition duration-1000 ${status === 'recording' ? 'animate-pulse opacity-[0.08]' : ''}`} />
 
-            <div className="relative saas-card p-10 md:p-14 flex flex-col gap-10 bg-white z-10 rounded-[32px] border-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.03)] focus-within:shadow-[0_20px_50px_rgba(37,99,235,0.06)] transition-all">
+            <div className="relative saas-card p-10 md:p-14 flex flex-col gap-10 bg-white dark:bg-black z-10 rounded-[32px] border-slate-100 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.03)] focus-within:shadow-[0_20px_50px_rgba(37,99,235,0.06)] transition-all">
 
-              <div className="flex items-center justify-between pb-8 border-b border-slate-100">
+              <div className="flex items-center justify-between pb-8 border-b border-slate-100 dark:border-white/10">
                 <div className={`flex items-center gap-3 px-4 py-2 rounded-full border shadow-sm transition-all duration-300 ${status === 'recording' ? 'bg-red-50 border-red-200 text-error' :
                     status === 'analyzing' ? 'bg-orange-50 border-orange-200 text-orange-600' :
-                      'bg-slate-50 border-slate-200 text-slate-500 font-semibold'
+                      'bg-slate-50 dark:bg-black border-slate-200 dark:border-white/20 text-slate-500 dark:text-gray-400 font-semibold'
                   }`}>
                   <div
                     className={`w-2.5 h-2.5 rounded-full ${status === 'recording' ? 'bg-error animate-pulse' :
@@ -337,14 +343,14 @@ export default function RecorderSection({
                       <span>words</span>
                     </div>
                   )}
-                  <div className={`font-mono text-3xl font-black tracking-tighter tabular-nums px-4 py-1.5 rounded-xl border border-transparent shadow-inner ${status === 'recording' ? 'bg-slate-50 border-slate-100 text-slate-800' : 'text-slate-300'}`}>
+                  <div className={`font-mono text-3xl font-black tracking-tighter tabular-nums px-4 py-1.5 rounded-xl border border-transparent shadow-inner ${status === 'recording' ? 'bg-slate-50 dark:bg-black border-slate-100 dark:border-white/10 text-slate-800 dark:text-white' : 'text-slate-300'}`}>
                     {formatTime(time)}
                   </div>
                 </div>
               </div>
 
               {/* Dynamic Transcript Box (Replaced with Wave Animation for UX) */}
-              <div className="relative w-full rounded-2xl bg-[#f8fafc] border border-slate-200 shadow-inner overflow-hidden focus-within:ring-4 focus-within:ring-accent/5 focus-within:border-accent/20 transition-all flex flex-col items-center justify-center min-h-[200px]">
+              <div className="relative w-full rounded-2xl bg-[#f8fafc] border border-slate-200 dark:border-white/20 shadow-inner overflow-hidden focus-within:ring-4 focus-within:ring-accent/5 focus-within:border-accent/20 transition-all flex flex-col items-center justify-center min-h-[200px]">
                 <button
                   aria-label="recorder text area shadow"
                   className="absolute inset-0 w-full h-full pointer-events-none shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)]"
@@ -400,13 +406,13 @@ export default function RecorderSection({
               onClick={status === 'idle' ? startRecording : status === 'recording' ? stopAndAnalyze : undefined}
               disabled={status === 'analyzing'}
               className={`group relative w-28 h-28 rounded-full flex flex-col items-center justify-center transition-all duration-500 transform active:scale-90 z-20 ${status === 'idle'
-                  ? 'bg-white border-2 border-slate-200 text-slate-400 hover:text-accent hover:border-accent/40 shadow-[0_10px_20px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_30px_rgba(0,0,0,0.08)] hover:-translate-y-1 animate-soft-pulse'
+                  ? 'bg-white dark:bg-black border-2 border-slate-200 dark:border-white/20 text-slate-400 hover:text-accent hover:border-accent/40 shadow-[0_10px_20px_rgba(0,0,0,0.05)] hover:shadow-[0_20px_30px_rgba(0,0,0,0.08)] hover:-translate-y-1 animate-soft-pulse'
                   : status === 'recording'
-                    ? 'bg-white text-error border-2 border-error shadow-[0_0_0_10px_rgba(239,68,68,0.1)]'
-                    : 'bg-slate-50 text-slate-300 border-2 border-slate-200 scale-95 cursor-wait'
+                    ? 'bg-white dark:bg-black text-error border-2 border-error shadow-[0_0_0_10px_rgba(239,68,68,0.1)]'
+                    : 'bg-slate-50 dark:bg-black text-slate-300 border-2 border-slate-200 dark:border-white/20 scale-95 cursor-wait'
                 }`}
             >
-              <div className={`flex items-center justify-center w-24 h-24 rounded-full transition-all duration-500 overflow-hidden ${status === 'recording' ? 'bg-red-50 animate-recording-ring' : 'bg-slate-50 group-hover:bg-blue-50'}`}>
+              <div className={`flex items-center justify-center w-24 h-24 rounded-full transition-all duration-500 overflow-hidden ${status === 'recording' ? 'bg-red-50 animate-recording-ring' : 'bg-slate-50 dark:bg-black group-hover:bg-blue-50'}`}>
                 {status === 'recording' ? (
                   <div className="w-8 h-8 bg-error rounded-md" />
                 ) : status === 'analyzing' ? (
@@ -447,7 +453,7 @@ export default function RecorderSection({
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-500 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-accent hover:border-accent/40 transition-colors shadow-sm"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-slate-500 dark:text-gray-400 bg-white dark:bg-black border border-slate-200 dark:border-white/20 rounded-lg hover:bg-slate-50 hover:text-accent hover:border-accent/40 transition-colors shadow-sm"
                   >
                     <Upload className="w-4 h-4" />
                     Upload Audio
@@ -458,7 +464,7 @@ export default function RecorderSection({
                     className={`flex items-center gap-2 px-4 py-2 text-sm font-bold border rounded-lg transition-colors shadow-sm ${
                       resumeFile 
                         ? 'bg-blue-50 text-blue-600 border-blue-200' 
-                        : 'text-slate-500 bg-white border-slate-200 hover:bg-slate-50 hover:text-accent hover:border-accent/40'
+                        : 'text-slate-500 dark:text-gray-400 bg-white dark:bg-black border-slate-200 dark:border-white/20 hover:bg-slate-50 hover:text-accent hover:border-accent/40'
                     }`}
                   >
                     <Upload className="w-4 h-4" />

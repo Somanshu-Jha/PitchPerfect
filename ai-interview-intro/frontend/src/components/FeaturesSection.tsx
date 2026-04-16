@@ -13,10 +13,10 @@ export default function FeaturesSection({ onStartRecording }: FeaturesSectionPro
       <div className="max-w-7xl mx-auto px-6 md:px-12">
         <FadeIn delay={0} yOffset={20}>
           <div className="text-center space-y-4 mb-20">
-            <h2 className="text-4xl md:text-5xl font-black tracking-tighter text-slate-800">
+            <h2 className="text-4xl md:text-5xl font-black tracking-tighter text-slate-800 dark:text-white">
               How It Works
             </h2>
-            <p className="text-lg text-slate-500 font-medium max-w-2xl mx-auto">
+            <p className="text-lg text-slate-500 dark:text-gray-400 font-medium max-w-2xl mx-auto">
               Mastering your introduction is just three simple steps away.
             </p>
           </div>
@@ -67,10 +67,10 @@ export default function FeaturesSection({ onStartRecording }: FeaturesSectionPro
                   </span>
                 </div>
                 <div className="space-y-3">
-                  <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                  <h3 className="text-xl font-black text-slate-800 dark:text-white tracking-tight">
                     {item.title}
                   </h3>
-                  <p className="text-[15px] text-slate-500 font-medium leading-relaxed">
+                  <p className="text-[15px] text-slate-500 dark:text-gray-400 font-medium leading-relaxed">
                     {item.desc}
                   </p>
                 </div>
@@ -84,7 +84,7 @@ export default function FeaturesSection({ onStartRecording }: FeaturesSectionPro
           <div className="flex justify-center mt-20">
             <button
               onClick={onStartRecording}
-              className="px-12 py-5 bg-white border-2 border-slate-200 text-slate-800 font-bold rounded-2xl hover:border-accent hover:text-accent hover:-translate-y-1 transition-all shadow-sm"
+              className="px-12 py-5 bg-white dark:bg-black border-2 border-slate-200 dark:border-white/20 text-slate-800 dark:text-white font-bold rounded-2xl hover:border-accent hover:text-accent hover:-translate-y-1 transition-all shadow-sm"
             >
               Ready to try? Start Recording
             </button>

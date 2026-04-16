@@ -38,7 +38,7 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
       <div className="absolute right-0 top-0 h-full w-24 bg-gradient-to-l from-white to-transparent z-10"></div>
 
       {/* 🚂 scrolling text */}
-      <div className="animate-marquee flex whitespace-nowrap gap-16 px-8 text-[15px] font-semibold text-slate-800">
+      <div className="animate-marquee flex whitespace-nowrap gap-16 px-8 text-[15px] font-semibold text-slate-800 dark:text-white">
 
         <span>🚀 Speak better. Crack interviews faster.</span>
         <span>🎯 AI-powered feedback in seconds.</span>
@@ -76,9 +76,9 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
           <div className="flex flex-col gap-8 lg:-ml-10 xl:-ml-16">
 
             <FadeIn delay={0} yOffset={20}>
-              <div className="inline-flex items-center gap-2 self-start py-1.5 px-3.5 rounded-full bg-white border border-slate-200 shadow-sm">
+              <div className="inline-flex items-center gap-2 self-start py-1.5 px-3.5 rounded-full bg-white dark:bg-black border border-slate-200 dark:border-white/20 shadow-sm">
                 <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                <span className="text-[10.5px] font-black tracking-[0.08em] text-slate-500 uppercase">
+                <span className="text-[10.5px] font-black tracking-[0.08em] text-slate-500 dark:text-gray-400 uppercase">
                   PitchPerfect · v1.0
                 </span>
               </div>
@@ -86,7 +86,7 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
 
             <div className="space-y-5">
               <FadeIn delay={150} yOffset={20}>
-                <h1 className="text-[3.2rem] md:text-[4.4rem] font-black leading-[1.05] text-slate-800 tracking-tight">
+                <h1 className="text-[3.2rem] md:text-[4.4rem] font-black leading-[1.05] text-slate-800 dark:text-white tracking-tight">
                   Nail your intro<br className="hidden md:block" />
                   <span className="text-accent"> every time.</span>
                 </h1>
@@ -94,7 +94,7 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
 
               <FadeIn delay={280} yOffset={20}>
                 <div className="space-y-4">
-                  <p className="text-[1.1rem] text-slate-500 max-w-[680px] leading-relaxed">
+                  <p className="text-[1.1rem] text-slate-500 dark:text-gray-400 max-w-[680px] leading-relaxed">
                     Record your interview introduction and find out exactly where
                     you're losing the listener — then fix it before the real thing.
                   </p>
@@ -102,24 +102,24 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center gap-3">
 
-                      <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
+                      <div className="flex items-center gap-2 bg-white dark:bg-black px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/20 shadow-sm">
                         <span>👥</span>
-                        <span className="text-[12px] text-slate-500">
-                          Built for <b className="text-slate-800">job seekers & developers</b>
+                        <span className="text-[12px] text-slate-500 dark:text-gray-400">
+                          Built for <b className="text-slate-800 dark:text-white">job seekers & developers</b>
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
+                      <div className="flex items-center gap-2 bg-white dark:bg-black px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/20 shadow-sm">
                         <span>🎙️</span>
-                        <span className="text-[12px] text-slate-500">
-                          Works with <b className="text-slate-800">any mic</b>
+                        <span className="text-[12px] text-slate-500 dark:text-gray-400">
+                          Works with <b className="text-slate-800 dark:text-white">any mic</b>
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
+                      <div className="flex items-center gap-2 bg-white dark:bg-black px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/20 shadow-sm">
                         <span>⚡</span>
-                        <span className="text-[12px] text-slate-500">
-                          Results in <b className="text-slate-800">under 30 seconds</b>
+                        <span className="text-[12px] text-slate-500 dark:text-gray-400">
+                          Results in <b className="text-slate-800 dark:text-white">under 30 seconds</b>
                         </span>
                       </div>
 
@@ -152,12 +152,12 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
                 ].map((f, i) => (
                   <div
                     key={i}
-                    className="group flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white border border-slate-100 shadow-sm
+                    className="group flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white dark:bg-black border border-slate-100 dark:border-white/10 shadow-sm
                                hover:shadow-[0_8px_24px_rgba(37,99,235,0.1)] hover:border-blue-200/60
                                hover:-translate-y-1 hover:scale-[1.01]
                                transition-all duration-200 ease-in-out"
                   >
-                    <p className="text-[12px] font-bold text-slate-700">{f.title}</p>
+                    <p className="text-[12px] font-bold text-slate-700 dark:text-gray-200">{f.title}</p>
                     <p className="text-[10.5px] text-slate-400">{f.desc}</p>
                   </div>
                 ))}

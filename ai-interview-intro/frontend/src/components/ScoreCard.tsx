@@ -61,7 +61,7 @@ export default function ScoreCard({ score }: ScoreCardProps) {
 
       <div className="flex flex-col flex-1 items-center justify-center w-full mt-2 lg:scale-110">
          <div className="flex items-baseline gap-2">
-            <span className="text-8xl md:text-9xl font-black tracking-tighter text-slate-800 tabular-nums leading-none">
+            <span className="text-8xl md:text-9xl font-black tracking-tighter text-slate-800 dark:text-white tabular-nums leading-none">
               {displayed}
             </span>
             <span className="text-2xl font-semibold text-slate-300">
@@ -70,7 +70,7 @@ export default function ScoreCard({ score }: ScoreCardProps) {
          </div>
       </div>
 
-      <div className="w-full h-4 rounded-full bg-slate-100 mt-10 overflow-hidden shadow-inner border border-slate-50">
+      <div className="w-full h-4 rounded-full bg-slate-100 dark:bg-zinc-900 mt-10 overflow-hidden shadow-inner border border-slate-50">
          <div
            className="h-full rounded-full"
            style={{

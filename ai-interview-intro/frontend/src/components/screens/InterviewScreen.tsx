@@ -102,7 +102,7 @@ export default function InterviewScreen({ onFinish }: { onFinish: (blob: Blob) =
         {!isRecording ? (
           <div className="text-slate-400 flex flex-col items-center justify-center h-full gap-4">
             <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center shadow-inner">
-              <Mic className="w-10 h-10 text-slate-500" />
+              <Mic className="w-10 h-10 text-slate-500 dark:text-gray-400" />
             </div>
             <p className="text-lg tracking-wide">Press the microphone below to start</p>
           </div>

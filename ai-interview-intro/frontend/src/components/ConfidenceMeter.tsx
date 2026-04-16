@@ -74,8 +74,8 @@ export default function ConfidenceMeter({ confidence }: ConfidenceMeterProps) {
            }}
          >
             {/* Mask to create ring effect */}
-            <div className="absolute inset-[10%] rounded-full bg-white shadow-inner flex flex-col items-center justify-center">
-               <span className="text-5xl md:text-6xl font-black tracking-tighter text-slate-800 tabular-nums leading-none">
+            <div className="absolute inset-[10%] rounded-full bg-white dark:bg-black shadow-inner flex flex-col items-center justify-center">
+               <span className="text-5xl md:text-6xl font-black tracking-tighter text-slate-800 dark:text-white tabular-nums leading-none">
                  {filled}%
                </span>
             </div>
