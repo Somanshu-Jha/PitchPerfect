@@ -1,0 +1,625 @@
+import React, { useState, useRef, useEffect, Suspense } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
+import { Avatar3D } from '../Avatar3D';
+import { CandidateObserver } from '../simulation/CandidateObserver';
+import { Mic, MicOff, PhoneOff, Zap, Shield, Loader2, Video } from 'lucide-react';
+import { apiUrl, wsUrl } from '../../config/api.config';
+
+// ── Types ──
+type Step = 'setup' | 'interview';
+interface Turn { role: 'assistant' | 'user'; content: string; }
+
+const MODES = [
+  { id: 'self_intro', name: 'Self Introduction', icon: '👤' },
+  { id: 'hr', name: 'HR Round', icon: '💼' },
+  { id: 'technical', name: 'Technical Round', icon: '⚙️' },
+  { id: 'behavioral', name: 'Behavioral (STAR)', icon: '🧠' },
+];
+
+export default function RealtimeInterview({ onBack }: { onBack: () => void }) {
+  const [step, setStep] = useState<Step>('setup');
+  const [selectedMode, setSelectedMode] = useState(MODES[1]);
+  const [difficulty, setDifficulty] = useState('intermediate');
+  
+  // WS & Interview State
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+
+  const [history, setHistory] = useState<Turn[]>([]);
+  const historyRef = useRef<Turn[]>([]);
+  const [transcript, setTranscript] = useState('');
+  const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+  const statusRef = useRef(status);
+  
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+  // We no longer have local state for premium/think modes, they are global
+  // in localStorage as selected_llm and think_mode.
+
+  // Resume & Job Role State
+  const [resumeText, setResumeText] = useState(localStorage.getItem('resume_analysis_context') || '');
+  const [jobRole, setJobRole] = useState('Software Engineer');
+
+  // Audio / VAD Refs
+  const recognitionRef = useRef<any>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const globalSilenceTimerRef = useRef<any>(null);
+  const lastTranscriptRef = useRef('');
+
+  // Webcam & Observer
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [mouthOpenness, setMouthOpenness] = useState(0);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  // Attach camera stream when video element is mounted
+  useEffect(() => {
+    if (cameraStream && videoRef.current) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream, step]);
+
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
+  // ── 1. Setup Phase ──
+  const startInterview = async () => {
+    setCameraError(null);
+    setConnectionError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Camera/Mic API not supported. Make sure you are using a secure context (HTTPS or localhost).");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      setCameraStream(stream);
+      setCameraActive(true);
+    } catch (e: any) {
+      console.warn("Camera/Mic access denied or unavailable:", e);
+      setCameraError(e.message || "Microphone/camera access was denied. Please check your browser permissions.");
+    }
+    
+    setStep('interview');
+    initWebSocket();
+  };
+
+  // ── 2. WebSocket Initialization ──
+  const initWebSocket = () => {
+    setConnectionError(null);
+    const socketUrl = wsUrl('/interview/ws/stream');
+    console.log("Connecting to WebSocket:", socketUrl);
+    
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(socketUrl);
+    } catch (e: any) {
+      console.error("WS connection error:", e);
+      setConnectionError(`Failed to initialize WebSocket: ${e.message}`);
+      return;
+    }
+    
+    socket.onopen = () => {
+      console.log('✅ WebSocket Connected');
+      setStatus('listening');
+      startListening();
+      
+      // Start ping loop to prevent Cloudflare tunnel timeouts
+      const pingInterval = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "ping" }));
+        } else {
+          clearInterval(pingInterval);
+        }
+      }, 10000); // 10 seconds for aggressive ISPs
+      
+      // Clear interval on socket close
+      socket.addEventListener('close', () => clearInterval(pingInterval));
+      
+      // Kickoff the interview with an initial prompt
+      const kickoff = {
+        type: "vad_pause",
+        history: [],
+        user_response: "",
+        difficulty,
+        mode: selectedMode.id,
+        use_fast_mode: localStorage.getItem('selected_llm') !== 'nvidia' && localStorage.getItem('think_mode') !== 'true',
+        selected_llm: localStorage.getItem('think_mode') === 'true' ? 'kimi' : (localStorage.getItem('selected_llm') || 'nvidia'),
+        resume_text: resumeText,
+        job_role: jobRole,
+        is_kickoff: true
+      };
+      socket.send(JSON.stringify(kickoff));
+    };
+
+    socket.onmessage = async (event) => {
+      if (typeof event.data === 'string') {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'status') {
+          setStatus(msg.message);
+        } else if (msg.type === 'turn_result') {
+          const newQ = msg.data.next_question || msg.data.feedback || '';
+          setHistory(prev => [...prev, { role: 'assistant', content: newQ }]);
+          setTranscript('');
+          lastTranscriptRef.current = '';
+        } else if (msg.type === 'audio_end') {
+          // Do nothing here. We wait for playAudioStream's onended to start listening.
+        } else if (msg.type === 'error') {
+          console.error("Backend WS Error:", msg.message);
+          setStatus('listening'); // Unblock UI
+          startListening();
+        }
+      } else {
+        playAudioStream(event.data);
+      }
+    };
+
+    socket.onerror = (err) => {
+      console.error("WS Error:", err);
+      setConnectionError("Failed to connect to AI server. Please make sure the backend is running and online.");
+    };
+    
+    socket.onclose = (event) => {
+      console.log("WS Closed:", event.reason);
+      if (!event.wasClean) {
+        setConnectionError("WebSocket connection lost unexpectedly.");
+      }
+      if (wsRef.current === socket) {
+        wsRef.current = null;
+      }
+    };
+    
+    setWs(socket);
+    wsRef.current = socket;
+  };
+
+  // ── 3. Audio Playback & Lip Sync ──
+  const playAudioStream = async (blob: Blob) => {
+    if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+    const ctx = audioCtxRef.current;
+    
+    const arrayBuffer = await blob.arrayBuffer();
+    try {
+      const decoded = await ctx.decodeAudioData(arrayBuffer);
+      
+      if (sourceNodeRef.current) {
+        try { sourceNodeRef.current.stop(); } catch(e) {}
+        sourceNodeRef.current.disconnect();
+      }
+
+      const source = ctx.createBufferSource();
+      const analyser = ctx.createAnalyser();
+      
+      analyser.fftSize = 256;
+      source.buffer = decoded;
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      
+      analyserRef.current = analyser;
+      sourceNodeRef.current = source;
+      source.start();
+      
+      // Loop for lip sync
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const updateLips = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        const avg = sum / dataArray.length;
+        setMouthOpenness(Math.min(1.0, avg / 100.0));
+        requestAnimationFrame(updateLips);
+      };
+      updateLips();
+      
+      source.onended = () => {
+        if (sourceNodeRef.current === source) {
+          setMouthOpenness(0);
+          setStatus('listening');
+        }
+      };
+    } catch (e) {
+      console.error("Audio Decode Error:", e);
+      setStatus('listening');
+    }
+  };
+
+  // ── 4. Web Speech VAD Logic ──
+  const startListening = () => {
+    if (recognitionRef.current) return;
+    
+    const SpeechRec = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      console.warn("Speech Recognition not supported in this browser.");
+      setConnectionError("Speech Recognition is not supported or active. Please use Google Chrome or Edge.");
+      return;
+    }
+    
+    const rec = new SpeechRec();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    
+    rec.onresult = (e: any) => {
+      let current = '';
+      for (let i = 0; i < e.results.length; i++) current += e.results[i][0].transcript;
+      setTranscript(current.trim());
+      lastTranscriptRef.current = current.trim();
+      
+      if (globalSilenceTimerRef.current) {
+        clearTimeout(globalSilenceTimerRef.current);
+        globalSilenceTimerRef.current = null;
+      }
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      
+      silenceTimerRef.current = setTimeout(() => {
+        triggerVadPause(false);
+      }, 6000); // Increased from 3s to 6s to allow users to pause and think mid-sentence
+    };
+    
+    rec.onerror = (e: any) => {
+      console.log("Rec error:", e.error);
+      if (e.error === 'not-allowed') {
+        setCameraError("Microphone permission is blocked. Please allow microphone access in your browser's address bar.");
+      }
+    };
+    rec.onend = () => {
+      // Use statusRef to check current status without stale closure issues
+      if (statusRef.current === 'listening') {
+        try { rec.start(); } catch {}
+      } else {
+        recognitionRef.current = null;
+      }
+    };
+    
+    recognitionRef.current = rec;
+    rec.start();
+    
+    // Start global silence timer for completely silent candidates
+    globalSilenceTimerRef.current = setTimeout(() => {
+      triggerVadPause(true);
+    }, 12000); // 12 seconds of complete silence triggers it
+  };
+
+  const stopListening = () => {
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (globalSilenceTimerRef.current) clearTimeout(globalSilenceTimerRef.current);
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null;
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+  };
+
+  const triggerVadPause = (isSilence = false) => {
+    if (!lastTranscriptRef.current && !isSilence) return;
+    
+    stopListening();
+    setStatus('thinking');
+    
+    const currentUserResponse = lastTranscriptRef.current || "[SYSTEM: The candidate was completely silent and did not answer the question.]";
+    setHistory(prev => {
+      const newHistory: any[] = [...prev, { role: 'user', content: currentUserResponse }];
+      
+      const currentWs = wsRef.current;
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        currentWs.send(JSON.stringify({
+          type: "vad_pause",
+          history: prev, // Backend appends user_response manually
+          user_response: currentUserResponse,
+          difficulty,
+          mode: selectedMode.id,
+          use_fast_mode: localStorage.getItem('selected_llm') !== 'nvidia' && localStorage.getItem('think_mode') !== 'true',
+          selected_llm: localStorage.getItem('think_mode') === 'true' ? 'kimi' : (localStorage.getItem('selected_llm') || 'nvidia'),
+          resume_text: resumeText,
+          job_role: jobRole
+        }));
+      }
+      return newHistory;
+    });
+  };
+
+  useEffect(() => {
+    if (status === 'listening') {
+      startListening();
+    } else {
+      stopListening();
+    }
+  }, [status]);
+
+  useEffect(() => {
+    return () => {
+      stopListening();
+      if (ws) ws.close();
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, [ws, cameraStream]);
+
+  // Anti-Cheat Tab Switching Detection
+  useEffect(() => {
+    if (step !== 'interview' || !ws || ws.readyState !== WebSocket.OPEN) return;
+    
+    const handleVisibilityChange = () => {
+      if (document.hidden && status === 'listening') {
+        ws.send(JSON.stringify({
+          type: "cheat_detected",
+          reason: "tab_switched"
+        }));
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [step, ws, status]);
+
+
+  if (step === 'setup') {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-6 text-white">
+        <div className="max-w-2xl w-full bg-white/5 border border-white/10 rounded-2xl p-8 backdrop-blur-xl">
+          <button onClick={onBack} className="text-white/40 hover:text-white mb-6 text-sm flex items-center gap-2">
+            ← Back to Dashboard
+          </button>
+          
+          <h1 className="text-3xl font-black mb-8 flex items-center gap-3">
+            <Zap className="text-yellow-400" /> 3D HR Engine
+          </h1>
+
+          {cameraError && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl mb-6 text-sm">
+              <strong>⚠️ Camera/Mic Warning:</strong> {cameraError}
+            </div>
+          )}
+          {connectionError && (
+            <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 p-4 rounded-xl mb-6 text-sm">
+              <strong>⚠️ Connection Warning:</strong> {connectionError}
+            </div>
+          )}
+          
+          <div className="space-y-6">
+            <div>
+              <label className="text-sm font-bold text-white/50 uppercase tracking-widest mb-3 block">Difficulty</label>
+              <div className="flex gap-3">
+                {['beginner', 'intermediate', 'advanced', 'faang'].map(d => (
+                  <button 
+                    key={d} 
+                    onClick={() => setDifficulty(d)}
+                    className={`flex-1 py-3 rounded-xl border font-semibold capitalize transition-all ${difficulty === d ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="text-sm font-bold text-white/50 uppercase tracking-widest mb-3 block">Target Job Role</label>
+                <input 
+                  type="text" 
+                  value={jobRole}
+                  onChange={(e) => setJobRole(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-indigo-500"
+                  placeholder="e.g. Senior Frontend Engineer"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-bold text-white/50 uppercase tracking-widest mb-3 flex items-center justify-between">
+                  <span>Resume / CV</span>
+                  <label className="cursor-pointer bg-white/10 hover:bg-white/20 text-xs px-3 py-1 rounded-full transition-colors">
+                    Upload File
+                    <input 
+                      type="file" 
+                      accept=".txt,.pdf,.doc,.docx"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        // For simplicity in this frontend, read as text if txt, otherwise use a mock text or alert
+                        if (file.type === "text/plain") {
+                          const text = await file.text();
+                          setResumeText(text);
+                          localStorage.setItem('resume_analysis_context', text);
+                        } else {
+                          // Note: In production, send file to backend parser. Here we just set a mock or prompt.
+                          alert("For this demo, please upload a .txt file or paste your resume text directly.");
+                        }
+                      }}
+                    />
+                  </label>
+                </label>
+                <textarea 
+                  value={resumeText}
+                  onChange={(e) => {
+                    setResumeText(e.target.value);
+                    localStorage.setItem('resume_analysis_context', e.target.value);
+                  }}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white h-[100px] resize-none focus:outline-none focus:border-indigo-500"
+                  placeholder="Paste your key experiences here, or upload your resume text..."
+                />
+              </div>
+            </div>
+            
+            <div>
+              <label className="text-sm font-bold text-white/50 uppercase tracking-widest mb-3 block">Interview Mode</label>
+              <div className="grid grid-cols-2 gap-3">
+                {MODES.map(m => (
+                  <button 
+                    key={m.id} 
+                    onClick={() => setSelectedMode(m)}
+                    className={`p-4 rounded-xl border text-left transition-all ${selectedMode.id === m.id ? 'bg-indigo-500/20 border-indigo-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                  >
+                    <div className="text-2xl mb-2">{m.icon}</div>
+                    <div className="font-bold">{m.name}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          <button 
+            onClick={startInterview}
+            className="w-full mt-10 py-4 bg-white text-black font-black text-lg rounded-xl hover:bg-gray-200 transition-colors"
+          >
+            Enter Interview Room
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-black flex flex-col font-sans text-white">
+      {/* Top Bar */}
+      <div className="h-16 border-b border-white/10 flex items-center justify-between px-6 bg-black/50 backdrop-blur-md z-20">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 bg-white/5 rounded-lg hover:bg-red-500/20 hover:text-red-400 transition-colors">
+            <PhoneOff className="w-5 h-5" />
+          </button>
+          <div>
+            <h2 className="font-bold leading-tight flex items-center gap-2">
+              {selectedMode.icon} {selectedMode.name}
+            </h2>
+            <p className="text-[10px] uppercase tracking-widest text-white/40 font-black flex items-center gap-1">
+              <Shield className="w-3 h-3 text-emerald-400" /> {difficulty} mode
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Main Area */}
+      <div className="flex-1 relative overflow-hidden bg-gradient-to-b from-gray-900 to-black">
+        {/* Floating Warnings */}
+        <div className="fixed top-20 right-6 z-50 flex flex-col gap-3 max-w-sm pointer-events-auto">
+          {cameraError && (
+            <div className="bg-red-950/85 border border-red-500/30 text-red-200 p-4 rounded-xl shadow-2xl text-xs backdrop-blur-md">
+              <strong>⚠️ Camera/Mic Alert:</strong> {cameraError}
+            </div>
+          )}
+          {connectionError && (
+            <div className="bg-amber-950/85 border border-amber-500/30 text-amber-200 p-4 rounded-xl shadow-2xl text-xs backdrop-blur-md">
+              <strong>⚠️ Connection Alert:</strong> {connectionError}
+            </div>
+          )}
+        </div>
+        {/* Real 3D Canvas */}
+        <div className="absolute inset-0 z-0">
+          {/* Static Background Image */}
+          <div 
+            className="absolute inset-0 bg-cover bg-center z-[-1]" 
+            style={{ backgroundImage: "url('/office_wall_bg.png')" }} 
+          />
+          <Canvas camera={{ position: [0, 0.45, 2.95], fov: 44, near: 0.1, far: 50 }} gl={{ preserveDrawingBuffer: true, antialias: true }}>
+            <ambientLight intensity={0.5} />
+            <directionalLight position={[2, 3, 4]} intensity={2} color="#fff1e0" castShadow />
+            <pointLight position={[-3, 2, -3]} intensity={1.5} color="#d4e8ff" />
+            <pointLight position={[0, -1, 2]} intensity={0.5} color="#ffffff" />
+
+            <Suspense fallback={
+              <Html center>
+                <div className="flex flex-col items-center justify-center space-y-4">
+                  <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+                  <p className="text-white font-semibold">Loading HR Avatar...</p>
+                </div>
+              </Html>
+            }>
+              <Avatar3D 
+                isSpeaking={status === 'speaking'} 
+                isThinking={status === 'thinking'} 
+                mouthOpenness={mouthOpenness}
+              />
+            </Suspense>
+          </Canvas>
+        </div>
+
+        {/* Small Webcam Preview (Anti-Cheat) */}
+        <div className="absolute bottom-6 left-6 w-48 h-32 bg-black border border-white/20 rounded-xl overflow-hidden z-20 shadow-2xl">
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            playsInline 
+            muted 
+            className="w-full h-full object-cover transform -scale-x-100" 
+          />
+          <div className="absolute top-2 left-2 bg-black/50 backdrop-blur-md px-2 py-1 rounded-md flex items-center gap-2">
+            <Video className="w-3 h-3 text-emerald-400" />
+            <span className="text-[10px] uppercase font-bold text-white/80">Proctoring Active</span>
+          </div>
+        </div>
+
+        {/* Candidate Observer Panel (Proctoring Metrics) */}
+        <div className="absolute top-6 left-6 w-48 bg-black/60 backdrop-blur-xl border border-white/20 rounded-xl p-4 z-20 shadow-2xl">
+          <div className="text-[10px] uppercase font-bold text-white/50 mb-3 flex items-center gap-2">
+            <Shield className="w-3 h-3" /> Anti-Cheat
+          </div>
+          <CandidateObserver 
+            videoRef={videoRef}
+            isActive={cameraActive && step === 'interview'}
+            onSignal={(signal) => {
+              if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && status === 'listening') {
+                if (signal === 'SYNTHETIC_EYE_CONTACT_DETECTED') {
+                  wsRef.current.send(JSON.stringify({ type: "cheat_detected", reason: "synthetic_eye_contact" }));
+                } else if (signal === 'EYE_CONTACT_LOST') {
+                  // If transcript is not empty, they have started answering (might be looking up to think). Don't interrupt.
+                  if (!lastTranscriptRef.current) {
+                    wsRef.current.send(JSON.stringify({ type: "cheat_detected", reason: "looking_away" }));
+                  }
+                } else if (signal === 'READING_DETECTED') {
+                  wsRef.current.send(JSON.stringify({ type: "cheat_detected", reason: "reading_detected" }));
+                } else if (signal === 'CAMERA_COVERED_OR_ABSENT') {
+                  wsRef.current.send(JSON.stringify({ type: "cheat_detected", reason: "camera_covered" }));
+                }
+              }
+            }}
+          />
+        </div>
+
+        {/* UI Overlay */}
+        <div className="absolute inset-0 z-50 pointer-events-none">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
+            {status === 'speaking' && (
+              <div className="bg-blue-600/90 text-white px-6 py-2 rounded-full flex items-center gap-3 backdrop-blur-md animate-pulse">
+                <Zap className="w-4 h-4" />
+                <span className="font-medium">HR is speaking...</span>
+              </div>
+            )}
+            {status === 'listening' && (
+              <div className="bg-green-600/90 text-white px-6 py-2 rounded-full flex items-center gap-3 backdrop-blur-md animate-pulse">
+                <Mic className="w-4 h-4 animate-bounce" />
+                <span className="font-medium">Listening to you...</span>
+              </div>
+            )}
+          </div>
+
+          <div className="max-w-2xl mx-auto w-full mb-10 absolute bottom-6 left-6 right-6">
+            {transcript && (
+              <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 text-center">
+                <p className="text-white/80 text-sm leading-relaxed">
+                  {transcript}
+                  <span className="animate-pulse ml-1 text-white/40">...</span>
+                </p>
+              </div>
+            )}
+            
+            {status === 'speaking' && history.length > 0 && history[history.length - 1].role === 'assistant' && !transcript && (
+               <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-4 text-center mt-4">
+                 <p className="text-white font-medium text-[15px] italic leading-relaxed">
+                   "{history[history.length - 1].content}"
+                 </p>
+               </div>
+            )}
+          </div>
+          
+        </div>
+      </div>
+    </div>
+  );
+}

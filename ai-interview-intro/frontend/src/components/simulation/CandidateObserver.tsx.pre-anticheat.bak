@@ -1,0 +1,455 @@
+/**
+ * CandidateObserver.tsx
+ * ──────────────────────
+ * Real-time candidate analysis using MediaPipe Face Landmarker.
+ * Tracks: gaze direction, eye contact %, blink rate, head pose,
+ * reading detection, confidence signals.
+ *
+ * Loads MediaPipe via CDN (no npm install required).
+ * Falls back gracefully if webcam/MediaPipe unavailable.
+ */
+
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import type { CandidateSignal } from './HRBehaviorEngine';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface CandidateMetrics {
+  eyeContactPercent: number;   // 0-100
+  confidenceLevel: 'Very Low' | 'Low' | 'Medium' | 'High' | 'Very High';
+  focusLevel: 'Low' | 'Medium' | 'High';
+  isReading: boolean;
+  blinkRatePerMin: number;
+  gazeDirection: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP' | 'DOWN';
+  facePresent: boolean;
+  nervousnessScore: number; // 0-100
+  isSyntheticEyeContact: boolean; // Windows Studio Effects detection
+}
+
+interface CandidateObserverProps {
+  videoRef: React.RefObject<HTMLVideoElement>;
+  isActive: boolean;
+  onMetricsUpdate?: (metrics: CandidateMetrics) => void;
+  onSignal?: (signal: CandidateSignal) => void;
+}
+
+// ── Landmark indices for MediaPipe Face Landmarker 478-point model ─────────────
+// Iris landmarks
+const LEFT_IRIS  = [468, 469, 470, 471, 472];
+const RIGHT_IRIS = [473, 474, 475, 476, 477];
+// Eye corner landmarks
+const LEFT_EYE_CORNERS  = [33, 133];   // inner, outer
+const RIGHT_EYE_CORNERS = [362, 263];
+// Nose tip
+const NOSE_TIP = 1;
+
+// ── Gaze Analysis Helpers ─────────────────────────────────────────────────────
+
+interface Point3D { x: number; y: number; z: number; }
+
+function centroid(points: Point3D[]): Point3D {
+  const n = points.length;
+  return {
+    x: points.reduce((s, p) => s + p.x, 0) / n,
+    y: points.reduce((s, p) => s + p.y, 0) / n,
+    z: points.reduce((s, p) => s + p.z, 0) / n,
+  };
+}
+
+function irisOffsetNormalized(
+  irisCenter: Point3D,
+  eyeInner: Point3D,
+  eyeOuter: Point3D,
+): { x: number; y: number } {
+  const eyeCenter = { x: (eyeInner.x + eyeOuter.x) / 2, y: (eyeInner.y + eyeOuter.y) / 2 };
+  const eyeWidth = Math.abs(eyeOuter.x - eyeInner.x);
+  if (eyeWidth < 0.001) return { x: 0, y: 0 };
+  return {
+    x: (irisCenter.x - eyeCenter.x) / eyeWidth,
+    y: (irisCenter.y - eyeCenter.y) / eyeWidth,
+  };
+}
+
+// ── MediaPipe Loader ──────────────────────────────────────────────────────────
+
+type FaceLandmarkerResult = {
+  faceLandmarks: Array<Array<{ x: number; y: number; z: number }>>;
+};
+
+async function loadMediaPipeFaceLandmarker(): Promise<any | null> {
+  try {
+    // Dynamically load @mediapipe/tasks-vision from CDN
+    const { FaceLandmarker, FilesetResolver } = await import(
+      /* @vite-ignore */
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'
+    ) as any;
+
+    const filesetResolver = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+    );
+
+    const faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+        delegate: 'GPU',
+      },
+      outputFaceBlendshapes: false,
+      runningMode: 'VIDEO',
+      numFaces: 1,
+    });
+
+    return faceLandmarker;
+  } catch (e) {
+    console.warn('[CandidateObserver] MediaPipe failed to load:', e);
+    return null;
+  }
+}
+
+// ── Rolling Window Averager ───────────────────────────────────────────────────
+
+class RollingAvg {
+  private values: number[] = [];
+  constructor(private readonly windowSize: number) {}
+  push(v: number) {
+    this.values.push(v);
+    if (this.values.length > this.windowSize) this.values.shift();
+  }
+  get avg(): number {
+    if (!this.values.length) return 0;
+    return this.values.reduce((s, v) => s + v, 0) / this.values.length;
+  }
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+const DEFAULT_METRICS: CandidateMetrics = {
+  eyeContactPercent: 75,
+  confidenceLevel: 'Medium',
+  focusLevel: 'High',
+  isReading: false,
+  blinkRatePerMin: 15,
+  gazeDirection: 'CENTER',
+  facePresent: true,
+  nervousnessScore: 20,
+  isSyntheticEyeContact: false,
+};
+
+export const CandidateObserver: React.FC<CandidateObserverProps> = ({
+  videoRef,
+  isActive,
+  onMetricsUpdate,
+  onSignal,
+}) => {
+  const faceLandmarkerRef = useRef<any>(null);
+  const rafRef = useRef<number>(0);
+  const lastVideoTimeRef = useRef(-1);
+
+  // Rolling averagers for stable metrics
+  const gazeXAvg     = useRef(new RollingAvg(30));
+  const gazeYAvg     = useRef(new RollingAvg(30));
+  const eyeContactAvg = useRef(new RollingAvg(90));  // ~3s window at 30fps
+  const blinkCount   = useRef(0);
+  const blinkTimer   = useRef(Date.now());
+  const lastBlink    = useRef(false);
+
+  // Reading detection: track horizontal gaze sweep pattern
+  const gazeHistory  = useRef<number[]>([]);
+  const rawGazeXHistory = useRef<number[]>([]); // For synthetic eye detection (saccades)
+  const readingScore = useRef(new RollingAvg(60));
+
+  const [mpReady, setMpReady]   = useState(false);
+  const [metrics, setMetrics]   = useState<CandidateMetrics>(DEFAULT_METRICS);
+
+  // Signal emission (rate-limited)
+  const lastSignalTime = useRef<Record<string, number>>({});
+  const emitSignal = useCallback((signal: CandidateSignal) => {
+    const now = Date.now();
+    const last = lastSignalTime.current[signal] || 0;
+    if (now - last > 4000) { // Min 4s between same signal
+      lastSignalTime.current[signal] = now;
+      onSignal?.(signal);
+    }
+  }, [onSignal]);
+
+  // ── Load MediaPipe ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isActive) return;
+    let cancelled = false;
+    loadMediaPipeFaceLandmarker().then(fl => {
+      if (cancelled) return;
+      faceLandmarkerRef.current = fl;
+      setMpReady(!!fl);
+    });
+    return () => { cancelled = true; };
+  }, [isActive]);
+
+  // ── Detection Loop ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isActive || !mpReady || !faceLandmarkerRef.current) return;
+    let running = true;
+
+    const detectLoop = () => {
+      if (!running) return;
+      const video = videoRef.current;
+
+      if (video && video.readyState >= 2 && video.currentTime !== lastVideoTimeRef.current) {
+        lastVideoTimeRef.current = video.currentTime;
+
+        try {
+          const result: FaceLandmarkerResult = faceLandmarkerRef.current.detectForVideo(
+            video, performance.now()
+          );
+          processResult(result);
+        } catch (_) { /* ignore */ }
+      }
+
+      rafRef.current = requestAnimationFrame(detectLoop);
+    };
+
+    rafRef.current = requestAnimationFrame(detectLoop);
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, [isActive, mpReady]);
+
+  const processResult = useCallback((result: FaceLandmarkerResult) => {
+    if (!result.faceLandmarks.length) {
+      setMetrics(m => ({ ...m, facePresent: false, eyeContactPercent: 0 }));
+      if (Date.now() - blinkTimer.current > 4000) {
+        emitSignal('CAMERA_COVERED_OR_ABSENT');
+      }
+      return;
+    }
+    blinkTimer.current = Date.now();
+
+    const lm = result.faceLandmarks[0];
+    if (!lm || lm.length < 478) return;
+
+    // ── Iris gaze computation ──
+    const leftIrisC  = centroid(LEFT_IRIS.map(i => lm[i]));
+    const rightIrisC = centroid(RIGHT_IRIS.map(i => lm[i]));
+    const leftOff    = irisOffsetNormalized(leftIrisC, lm[LEFT_EYE_CORNERS[0]], lm[LEFT_EYE_CORNERS[1]]);
+    const rightOff   = irisOffsetNormalized(rightIrisC, lm[RIGHT_EYE_CORNERS[0]], lm[RIGHT_EYE_CORNERS[1]]);
+
+    // Average gaze (positive X = looking right, positive Y = looking down)
+    const avgGazeX = (leftOff.x + rightOff.x) / 2;
+    const avgGazeY = (leftOff.y + rightOff.y) / 2;
+    gazeXAvg.current.push(avgGazeX);
+    gazeYAvg.current.push(avgGazeY);
+
+    const stableGazeX = gazeXAvg.current.avg;
+    const stableGazeY = gazeYAvg.current.avg;
+
+    // ── Eye contact: is gaze close to center? ──
+    const gazeMag = Math.sqrt(stableGazeX ** 2 + stableGazeY ** 2);
+    // Relaxed threshold for eye contact (from 0.08 to 0.15) to account for webcam placement
+    const isContact = gazeMag < 0.15; 
+    eyeContactAvg.current.push(isContact ? 100 : 0);
+    const eyeContactPercent = Math.round(eyeContactAvg.current.avg);
+
+    // ── Gaze direction label ──
+    let gazeDirection: CandidateMetrics['gazeDirection'] = 'CENTER';
+    if (Math.abs(stableGazeX) > Math.abs(stableGazeY)) {
+      // Relaxed direction threshold (from 0.06 to 0.12)
+      gazeDirection = stableGazeX > 0.12 ? 'RIGHT' : stableGazeX < -0.12 ? 'LEFT' : 'CENTER';
+    } else {
+      gazeDirection = stableGazeY > 0.12 ? 'DOWN' : stableGazeY < -0.12 ? 'UP' : 'CENTER';
+    }
+
+    // ── Synthetic Eye Contact Detection (Windows Studio Effects) ──
+    // Natural eyes have micro-saccades. AI eye contact filters rigidly lock the pupil.
+    rawGazeXHistory.current.push(avgGazeX);
+    if (rawGazeXHistory.current.length > 90) rawGazeXHistory.current.shift();
+    
+    let isSyntheticEyeContact = false;
+    if (rawGazeXHistory.current.length >= 90) {
+      const sum = rawGazeXHistory.current.reduce((a, b) => a + b, 0);
+      const mean = sum / rawGazeXHistory.current.length;
+      const variance = rawGazeXHistory.current.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / rawGazeXHistory.current.length;
+      
+      // If variance is impossibly low (rigidly locked) but they are supposedly making perfect eye contact
+      if (variance < 0.000005 && isContact) {
+        isSyntheticEyeContact = true;
+      }
+    }
+
+    if (isSyntheticEyeContact) {
+      emitSignal('SYNTHETIC_EYE_CONTACT_DETECTED');
+    }
+
+    // ── Reading detection (systematic horizontal sweeps) ──
+    gazeHistory.current.push(stableGazeX);
+    if (gazeHistory.current.length > 30) gazeHistory.current.shift();
+    // Count direction changes in gaze history
+    let dirChanges = 0;
+    for (let i = 1; i < gazeHistory.current.length; i++) {
+      if ((gazeHistory.current[i] - gazeHistory.current[i - 1]) * (gazeHistory.current[i - 1] - (gazeHistory.current[i - 2] || 0)) < -0.001) {
+        dirChanges++;
+      }
+    }
+    const readingLikely = dirChanges > 6 && eyeContactPercent < 50;
+    readingScore.current.push(readingLikely ? 100 : 0);
+    const isReading = readingScore.current.avg > 60;
+
+    // ── Blink detection (eye openness via landmark distance) ──
+    const leftUpper = lm[159]; const leftLower = lm[145];
+    const eyeOpenness = Math.abs(leftUpper.y - leftLower.y);
+    const isBlink = eyeOpenness < 0.01;
+    if (isBlink && !lastBlink.current) {
+      blinkCount.current++;
+    }
+    lastBlink.current = isBlink;
+    // Calculate blink rate per minute
+    const elapsed = (Date.now() - blinkTimer.current) / 60000;
+    const blinkRatePerMin = elapsed > 0.1 ? Math.round(blinkCount.current / elapsed) : 15;
+
+    // ── Nervousness score ──
+    const blinkNervous = blinkRatePerMin > 25 ? 40 : blinkRatePerMin > 20 ? 20 : 0;
+    const gazeNervous  = gazeDirection !== 'CENTER' ? 30 : 0;
+    const readNervous  = isReading ? 30 : 0;
+    const nervousnessScore = Math.min(100, blinkNervous + gazeNervous + readNervous);
+
+    // ── Confidence level ──
+    const confScore = eyeContactPercent - nervousnessScore * 0.5;
+    let confidenceLevel: CandidateMetrics['confidenceLevel'] = 'Medium';
+    if (confScore > 70) confidenceLevel = 'Very High';
+    else if (confScore > 55) confidenceLevel = 'High';
+    else if (confScore > 35) confidenceLevel = 'Medium';
+    else if (confScore > 15) confidenceLevel = 'Low';
+    else confidenceLevel = 'Very Low';
+
+    // ── Focus level ──
+    let focusLevel: CandidateMetrics['focusLevel'] = 'High';
+    if (eyeContactPercent < 40 || isReading) focusLevel = 'Low';
+    else if (eyeContactPercent < 65) focusLevel = 'Medium';
+
+    const newMetrics: CandidateMetrics = {
+      eyeContactPercent,
+      confidenceLevel,
+      focusLevel,
+      isReading,
+      blinkRatePerMin: Math.min(50, blinkRatePerMin),
+      gazeDirection,
+      facePresent: true,
+      nervousnessScore,
+      isSyntheticEyeContact,
+    };
+
+    setMetrics(newMetrics);
+    onMetricsUpdate?.(newMetrics);
+
+    // ── Emit behavior signals ──
+    if (isReading) emitSignal('READING_DETECTED');
+    if (nervousnessScore > 60) emitSignal('NERVOUS_DETECTED');
+
+    // Emit eye contact lost only after 3 consecutive seconds
+    if (eyeContactPercent < 35 && gazeDirection !== 'CENTER') {
+      if (!eyeContactLostTimer.current) {
+        eyeContactLostTimer.current = Date.now();
+      } else if (Date.now() - eyeContactLostTimer.current > 3000) {
+        emitSignal('EYE_CONTACT_LOST');
+        eyeContactLostTimer.current = null; // Reset to avoid spamming
+      }
+    } else {
+      eyeContactLostTimer.current = null;
+    }
+  }, [onMetricsUpdate, emitSignal]);
+
+  // ── Render: Observation Metrics Panel ────────────────────────────────────────
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Eye Contact */}
+      <MetricRow
+        label="Eye Contact"
+        value={`${metrics.eyeContactPercent}%`}
+        fill={metrics.eyeContactPercent / 100}
+        color={metrics.eyeContactPercent > 65 ? '#22c55e' : metrics.eyeContactPercent > 40 ? '#f59e0b' : '#ef4444'}
+      />
+
+      {/* Confidence */}
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-white/40 font-medium">Confidence</span>
+        <span className={`text-[11px] font-black uppercase tracking-wider ${
+          metrics.confidenceLevel === 'Very High' || metrics.confidenceLevel === 'High' ? 'text-emerald-400' :
+          metrics.confidenceLevel === 'Medium' ? 'text-amber-400' : 'text-red-400'
+        }`}>
+          {metrics.confidenceLevel}
+        </span>
+      </div>
+
+      {/* Focus */}
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-white/40 font-medium">Focus Level</span>
+        <span className={`text-[11px] font-black uppercase tracking-wider ${
+          metrics.focusLevel === 'High' ? 'text-emerald-400' :
+          metrics.focusLevel === 'Medium' ? 'text-amber-400' : 'text-red-400'
+        }`}>
+          {metrics.focusLevel}
+        </span>
+      </div>
+
+      {/* Reading Detection */}
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-white/40 font-medium">Reading Check</span>
+        <span className={`text-[11px] font-black uppercase tracking-wider ${metrics.isReading ? 'text-red-400 animate-pulse' : 'text-emerald-400'}`}>
+          {metrics.isReading ? '⚠ Detected' : '✓ None'}
+        </span>
+      </div>
+
+      {/* Gaze Direction */}
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-white/40 font-medium">Gaze</span>
+        <GazeIndicator direction={metrics.gazeDirection} />
+      </div>
+
+      {/* Nervousness */}
+      <MetricRow
+        label="Composure"
+        value={`${Math.round(100 - metrics.nervousnessScore)}%`}
+        fill={(100 - metrics.nervousnessScore) / 100}
+        color={(100 - metrics.nervousnessScore) > 60 ? '#22c55e' : '#f59e0b'}
+      />
+
+      {!mpReady && isActive && (
+        <p className="text-[9px] text-white/20 text-center mt-1">Loading face analysis...</p>
+      )}
+    </div>
+  );
+};
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function MetricRow({ label, value, fill, color }: { label: string; value: string; fill: number; color: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-white/40 font-medium">{label}</span>
+        <span className="text-[11px] font-black text-white/80">{value}</span>
+      </div>
+      <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${Math.round(fill * 100)}%`, background: color }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function GazeIndicator({ direction }: { direction: CandidateMetrics['gazeDirection'] }) {
+  const arrows: Record<string, string> = {
+    CENTER: '●', LEFT: '←', RIGHT: '→', UP: '↑', DOWN: '↓',
+  };
+  const colors: Record<string, string> = {
+    CENTER: 'text-emerald-400', LEFT: 'text-amber-400', RIGHT: 'text-amber-400',
+    UP: 'text-amber-400', DOWN: 'text-amber-400',
+  };
+  return (
+    <span className={`text-[13px] font-black ${colors[direction]} transition-colors duration-300`}>
+      {arrows[direction]}
+    </span>
+  );
+}
+
+export default CandidateObserver;

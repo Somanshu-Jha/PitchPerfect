@@ -1,0 +1,1006 @@
+# =====================================================================
+# DIALOGUE MANAGER — Hyper-Realistic AI Interview Simulation Engine
+# =====================================================================
+# Drives a lifelike FAANG-level interviewer avatar with:
+#   - Avatar state machine (emotion / pose / gaze / micro-expression)
+#   - Vocal modulation parameters (pitch, speed, pauses, emphasis)
+#   - STAR method enforcement & cross-questioning
+#   - Adaptive strictness across 4 difficulty tiers
+#   - Natural bridge sentences & turn-taking protocol
+# =====================================================================
+
+import logging
+import json
+import os
+import random
+import re
+from typing import List, Dict, Any
+from backend.core.genai_engine import genai_engine
+from backend.core.model_manager import model_manager
+from backend.services.llm_router import llm_router
+from backend.interview.question_bank import get_questions
+
+logger = logging.getLogger(__name__)
+
+# ── Avatar Constants ──────────────────────────────────────────────────
+EMOTIONS = ["NEUTRAL", "CURIOUS", "IMPRESSED", "SKEPTICAL", "CONCERNED", "STERN", "THOUGHTFUL", "CONCLUDING"]
+POSES = ["PROFESSIONAL_DEFAULT", "LEAN_FORWARD", "LEAN_BACK", "THINKER_POSE", "PROFESSIONAL_NOD", "STEEPLED_FINGERS", "OPEN_PALMS", "NOTE_TAKING"]
+GAZES = ["DIRECT", "THINKING", "NOTES", "DRIFT"]
+MICRO_EXPRESSIONS = ["NONE", "SUBTLE_SMILE", "EYEBROW_RAISE", "LIP_COMPRESS", "HEAD_TILT"]
+
+# ── Bridge Sentences ──────────────────────────────────────────────────
+BRIDGE_TOPIC_SHIFT = [
+    "That's helpful context. Now let me shift gears a bit...",
+    "Building on what you just said...",
+    "Interesting. That actually connects to something I wanted to ask...",
+    "Good. Now I want to test a different angle...",
+    "Noted. Let's move into something more specific...",
+]
+BRIDGE_FOLLOW_UP = [
+    "You mentioned something interesting there — I want to dig into that.",
+    "Hold on — walk me through that more carefully.",
+    "That's the what. Now give me the how.",
+    "Okay, but what happened when things went wrong?",
+]
+BRIDGE_ENCOURAGEMENT = [
+    "You're on the right track. Let me ask it differently...",
+    "Good instinct. Can you back that up with a specific example?",
+    "I like where you're going with this. Keep going.",
+]
+
+# ── Filler Word Detection ─────────────────────────────────────────────
+FILLER_PATTERN = re.compile(
+    r"\b(um|uh|like|you know|basically|actually|literally|sort of|kind of|i mean|right)\b",
+    re.IGNORECASE,
+)
+
+
+class DialogueManager:
+    """
+    Hyper-Realistic Interview Simulation Engine.
+
+    Drives a lifelike FAANG-level interviewer avatar with emotion states,
+    body-language poses, vocal modulation, and surgical evaluation logic.
+    """
+
+    def __init__(self):
+        self.llm_service = None
+        self._embedder = None
+        self._embedder_failed = False
+        # Warm the MiniLM embedder off-thread so the first interview turn
+        # never pays its multi-second load cost.
+        import threading
+        threading.Thread(target=self._get_embedder, daemon=True).start()
+
+    # ── Semantic relevance (real understanding, not keywords) ──────────
+
+    def _get_embedder(self):
+        """Lazy MiniLM sentence embedder; degrades gracefully if unavailable."""
+        if self._embedder_failed:
+            return None
+        if self._embedder is None:
+            try:
+                from backend.ml_models.embedding_model import EmbeddingModel
+                self._embedder = EmbeddingModel()
+            except Exception as e:
+                logger.warning(f"[DialogueManager] Embedder unavailable ({e}); relevance checks disabled.")
+                self._embedder_failed = True
+                return None
+        return self._embedder
+
+    def _answer_relevance(self, question: str, answer: str):
+        """Cosine similarity between the question asked and the answer given.
+        Returns None when it can't be computed. ~>0.45 on-topic, <0.30 off-topic."""
+        if not question or not answer or len(answer.split()) < 3:
+            return None
+        emb = self._get_embedder()
+        if emb is None:
+            return None
+        try:
+            return emb.similarity(emb.encode(question), emb.encode(answer))
+        except Exception as e:
+            logger.warning(f"[DialogueManager] relevance failed: {e}")
+            return None
+
+    @staticmethod
+    def _last_assistant_question(history: List[Dict[str, str]]) -> str:
+        for turn in reversed(history or []):
+            if turn.get("role") == "assistant" and turn.get("content", "").strip():
+                return turn["content"]
+        return ""
+
+    @staticmethod
+    def _asked_questions(history: List[Dict[str, str]]) -> List[str]:
+        return [t.get("content", "") for t in (history or []) if t.get("role") == "assistant"]
+
+    # ── Helpers ────────────────────────────────────────────────────────
+
+    def _mode_key(self, mode: str) -> str:
+        normalized = (mode or "hr").strip().lower().replace(" round", "").replace(" ", "_")
+        aliases = {
+            "hr_round": "hr",
+            "human_resources": "hr",
+            "technical_round": "technical",
+            "behavioral_star": "behavioral",
+            "behavioral_(star)": "behavioral",
+            "self_introduction": "self_intro",
+        }
+        return aliases.get(normalized, normalized)
+
+    def _count_fillers(self, text: str) -> int:
+        return len(FILLER_PATTERN.findall(text))
+
+    def _detect_star(self, text: str) -> Dict[str, bool]:
+        """Heuristic STAR detection in a candidate's answer."""
+        t = text.lower()
+        return {
+            "situation": any(kw in t for kw in ["when i", "at my", "during", "while working", "last year", "in my"]),
+            "task": any(kw in t for kw in ["challenge", "goal", "needed to", "had to", "objective", "responsible"]),
+            "action": any(kw in t for kw in ["i built", "i designed", "i led", "i created", "i implemented", "i wrote", "i developed", "i used"]),
+            "result": any(kw in t for kw in ["improved", "increased", "reduced", "achieved", "resulted", "delivered", "saved", "%", "percent"]),
+        }
+
+    def _assess_answer_quality(self, text: str, difficulty: str) -> str:
+        """Classify the answer quality to drive avatar reactions."""
+        words = text.split()
+        word_count = len(words)
+        filler_count = self._count_fillers(text)
+        star = self._detect_star(text)
+        star_score = sum(star.values())
+        evidence_terms = {"built", "led", "improved", "designed", "created", "managed",
+                          "launched", "project", "team", "metric", "users", "revenue",
+                          "accuracy", "internship", "python", "react", "sql", "data"}
+        evidence_hits = sum(1 for w in words if w.lower().strip(".,!?") in evidence_terms)
+
+        if word_count < 12:
+            return "very_weak"
+        if word_count < 25 and evidence_hits == 0:
+            return "weak"
+        if star_score >= 3 and evidence_hits >= 2:
+            return "strong"
+        if evidence_hits >= 1 or star_score >= 2:
+            return "moderate"
+        return "weak"
+
+    # ── Avatar State Generator ─────────────────────────────────────────
+
+    def _generate_avatar_state(self, quality: str, difficulty: str, is_ending: bool) -> Dict[str, Any]:
+        """Generate avatar emotion, pose, gaze and vocal params based on answer quality."""
+        if is_ending:
+            return {
+                "avatar_state": {
+                    "emotion": "CONCLUDING",
+                    "pose": "OPEN_PALMS",
+                    "gaze": "DIRECT",
+                    "micro_expression": "SUBTLE_SMILE",
+                },
+                "vocal_params": {
+                    "pitch_multiplier": 0.97,
+                    "speed_multiplier": 0.92,
+                    "pause_before_ms": 1200,
+                    "filler_prefix": "Well...",
+                },
+            }
+
+        # Map quality → avatar reaction
+        state_map = {
+            "strong": {
+                "avatar_state": {
+                    "emotion": "IMPRESSED",
+                    "pose": random.choice(["LEAN_FORWARD", "PROFESSIONAL_NOD"]),
+                    "gaze": "DIRECT",
+                    "micro_expression": "SUBTLE_SMILE",
+                },
+                "vocal_params": {
+                    "pitch_multiplier": 1.05,
+                    "speed_multiplier": 1.0,
+                    "pause_before_ms": 800,
+                    "filler_prefix": random.choice(["That's excellent.", "Interesting...", "I see..."]),
+                },
+            },
+            "moderate": {
+                "avatar_state": {
+                    "emotion": random.choice(["CURIOUS", "THOUGHTFUL"]),
+                    "pose": random.choice(["THINKER_POSE", "PROFESSIONAL_DEFAULT"]),
+                    "gaze": random.choice(["DIRECT", "THINKING"]),
+                    "micro_expression": random.choice(["NONE", "HEAD_TILT", "EYEBROW_RAISE"]),
+                },
+                "vocal_params": {
+                    "pitch_multiplier": 1.0,
+                    "speed_multiplier": 0.98,
+                    "pause_before_ms": 1000,
+                    "filler_prefix": random.choice(["Hmm...", "Okay...", "Right..."]),
+                },
+            },
+            "weak": {
+                "avatar_state": {
+                    "emotion": "SKEPTICAL" if difficulty in ("advanced", "extreme") else "CONCERNED",
+                    "pose": "LEAN_BACK" if difficulty in ("advanced", "extreme") else "OPEN_PALMS",
+                    "gaze": "DIRECT",
+                    "micro_expression": "LIP_COMPRESS" if difficulty in ("advanced", "extreme") else "HEAD_TILT",
+                },
+                "vocal_params": {
+                    "pitch_multiplier": 0.95,
+                    "speed_multiplier": 0.93,
+                    "pause_before_ms": 1400,
+                    "filler_prefix": random.choice(["Hmm...", "I see...", ""]),
+                },
+            },
+            "very_weak": {
+                "avatar_state": {
+                    "emotion": "STERN" if difficulty == "extreme" else "CONCERNED",
+                    "pose": "STEEPLED_FINGERS" if difficulty == "extreme" else "OPEN_PALMS",
+                    "gaze": "DIRECT",
+                    "micro_expression": "LIP_COMPRESS",
+                },
+                "vocal_params": {
+                    "pitch_multiplier": 0.92,
+                    "speed_multiplier": 0.88,
+                    "pause_before_ms": 1800,
+                    "filler_prefix": "",
+                },
+            },
+        }
+        return state_map.get(quality, state_map["moderate"])
+
+    # ── Scoring ────────────────────────────────────────────────────────
+
+    def _score_simulation(self, history: List[Dict[str, str]], use_premium: bool = None, selected_llm: str = None) -> Dict[str, Any]:
+        user_answers = [turn.get("content", "") for turn in history if turn.get("role") == "user"]
+        combined = " ".join(user_answers)
+        
+        # Build transcript of the entire interview
+        transcript = ""
+        for turn in history:
+            role = "Interviewer" if turn.get("role") == "assistant" else "Candidate"
+            transcript += f"{role}: {turn.get('content', '')}\n"
+
+        system_prompt = """You are a Principal HR Recruiter evaluating a candidate's complete interview simulation.
+Analyze the candidate's answers deeply and provide highly personalized, highly detailed feedback.
+DO NOT provide generic advice. ALWAYS acknowledge specific details they mentioned (e.g. specific technologies, projects, metrics, companies).
+If they talked about something specific (like blockchain, AI, a specific project), you MUST reference it directly in your feedback.
+
+Return ONLY a valid JSON object in this exact format:
+{
+    "score": 8.5,
+    "strengths": [
+        "You specifically mentioned [Topic/Project] and explained how you used [Technology] to achieve [Result]. This was excellent.",
+        "..."
+    ],
+    "improvements": [
+        "When asked about [Topic], your answer was vague. Instead of saying [Quote], you should specify [Details].",
+        "..."
+    ],
+    "final_summary": "Overall, your interview was..."
+}
+
+Rules:
+1. "score" MUST be a float between 0.0 and 10.0.
+2. Provide exactly 3-4 strengths and 3-4 improvements.
+3. Every single point MUST reference their exact words or specific claims from the transcript.
+4. DO NOT wrap JSON in markdown (```json). Just return the raw JSON."""
+
+        user_prompt = f"[INTERVIEW TRANSCRIPT]:\n{transcript}\n\nGenerate the evaluation JSON now."
+
+        try:
+            from backend.services.llm_router import llm_router
+            import json
+            from backend.core.genai_engine import genai_engine
+            
+            response_text = llm_router.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=800,
+                temperature=0.6,
+                use_premium=use_premium,
+                selected_llm=selected_llm
+            )
+            
+            cleaned = genai_engine._strip_markdown(response_text)
+            result = json.loads(cleaned)
+            
+            # Handle 0.0-1.0 decimal bugs from LLM
+            score = float(result.get("score", 5.0))
+            if 0.0 < score <= 1.0:
+                score *= 10.0
+            score = max(1.0, min(10.0, round(score, 1)))
+            result["score"] = score
+            
+            return {
+                "score": score,
+                "strengths": result.get("strengths", [])[:4],
+                "improvements": result.get("improvements", [])[:4],
+                "final_summary": result.get("final_summary", "Session complete.")
+            }
+        except Exception as e:
+            logger.error(f"Error generating LLM simulation score: {e}")
+            # Fallback to deterministic scoring
+            words = re.findall(r"\b[\w'-]+\b", combined.lower())
+            evidence_terms = {
+                "built", "led", "improved", "designed", "created", "managed", "launched",
+                "project", "team", "metric", "users", "revenue", "accuracy", "internship",
+                "python", "react", "sql", "data", "model", "customer", "stakeholder",
+            }
+            filler_count = self._count_fillers(combined)
+            evidence_hits = sum(1 for word in words if word in evidence_terms)
+
+            score = 5.2
+            score += min(1.8, len(words) / 90)
+            score += min(1.8, evidence_hits * 0.22)
+            score -= min(1.2, filler_count * 0.18)
+            if len(user_answers) >= 3:
+                score += 0.7
+            score = round(max(3.0, min(9.6, score)), 1)
+
+            strengths = []
+            if evidence_hits:
+                strengths.append("You included concrete experience signals — projects, metrics, and action verbs that show real impact.")
+            if len(words) >= 80:
+                strengths.append("Your answers had enough depth for the interviewer to ask meaningful follow-ups.")
+            if len(user_answers) >= 3:
+                strengths.append("You stayed engaged through multiple turns, demonstrating resilience under pressure.")
+            if filler_count <= 2:
+                strengths.append("Minimal filler words — your delivery sounded polished and confident.")
+            if not strengths:
+                strengths.append("You completed the simulation and gave the interviewer material to work with.")
+
+            improvements = []
+            if len(words) < 80:
+                improvements.append("Expand your answers — aim for at least one specific project, metric, or example per response.")
+            if filler_count > 2:
+                improvements.append(f"Reduce filler words ({filler_count} detected). Pause silently instead of using 'um' or 'like'.")
+            improvements.append("Close every answer with the measurable impact of your work, not just the task you performed.")
+            if evidence_hits < 3:
+                improvements.append("Use more action verbs: 'built', 'led', 'improved', 'designed' — they signal ownership.")
+
+            return {
+                "score": score,
+                "strengths": strengths[:4],
+                "improvements": improvements[:4],
+                "final_summary": (
+                    "Session complete. Your next practice target is to make every answer specific, "
+                    "evidence-backed, and tied to the role. Focus on the STAR method: Situation, Task, Action, Result."
+                ),
+            }
+
+    # ── Fallback Turn (Deterministic — No LLM) ────────────────────────
+
+    def _fallback_turn(
+        self,
+        history: List[Dict[str, str]],
+        user_response: str,
+        difficulty: str,
+        mode: str,
+    ) -> Dict[str, Any]:
+        current_history = [*history, {"role": "user", "content": user_response}]
+        candidate_turns = sum(1 for turn in current_history if turn.get("role") == "user")
+        user_words = re.findall(r"\b[\w'-]+\b", user_response)
+        filler_count = self._count_fillers(user_response)
+        star = self._detect_star(user_response)
+        quality = self._assess_answer_quality(user_response, difficulty)
+        mode_key = self._mode_key(mode)
+        diff_lower = difficulty.lower()
+
+        # ── Session End ──
+        if candidate_turns >= 4:
+            final_result = self._score_simulation(current_history)
+            avatar = self._generate_avatar_state(quality, diff_lower, is_ending=True)
+            return {
+                "feedback": "Thank you — that gives me a solid picture of your background. Let me share some quick observations.",
+                "next_question": "",
+                "should_end": True,
+                "topic": "summary",
+                "reasoning": "Candidate completed enough turns for a comprehensive assessment.",
+                **avatar,
+                **final_result,
+            }
+
+        # ── Generate Next Question ──
+        # Session-seeded shuffle so every interview gets a different question
+        # order, and verbatim-repeat filtering so a question is NEVER asked
+        # twice — the old sequential index replayed the same script each run.
+        questions = list(get_questions(mode_key) or get_questions("hr"))
+        # seed from the candidate's OWN first answer — unique per person/session
+        first_user = next((t.get("content", "") for t in current_history if t.get("role") == "user"), "")
+        rng = random.Random(hash(first_user + mode_key) ^ os.getpid())
+        rng.shuffle(questions)
+        already_asked = self._asked_questions(history)
+        fresh = [q for q in questions if q["text"] not in already_asked]
+        next_q = (fresh or questions)[(candidate_turns - 1) % len(fresh or questions)]["text"]
+        avatar = self._generate_avatar_state(quality, diff_lower, is_ending=False)
+
+        # ── Off-Topic Answer (semantic, not keyword) ──
+        # A real HR names the mismatch and rephrases ONCE in different words;
+        # if the candidate misses again, they move on — they never loop the
+        # same sentence.
+        last_q = self._last_assistant_question(history)
+        relevance = self._answer_relevance(last_q, user_response)
+        already_rephrased = "let me put that another way" in last_q.lower()
+        # Guards: never on the very first answer (greetings invite ANY intro),
+        # and never against trivially short assistant turns.
+        if (relevance is not None and relevance < 0.25 and len(user_words) >= 12
+                and candidate_turns > 1 and len(last_q.split()) >= 6):
+            if not already_rephrased:
+                feedback = (
+                    "I appreciate the detail, but that's not quite what I asked about. "
+                )
+                next_q = (
+                    f"Let me put that another way — {last_q.rstrip('?').rstrip('.')}? "
+                    "Feel free to answer just that part."
+                )
+                topic = "clarification"
+            else:
+                feedback = (
+                    "Alright, let's not get stuck on that one — we can circle back if there's time. "
+                )
+                topic = "new_topic"
+            avatar["avatar_state"]["emotion"] = "THOUGHTFUL"
+            avatar["avatar_state"]["micro_expression"] = "HEAD_TILT"
+            return {
+                "feedback": feedback,
+                "next_question": next_q,
+                "should_end": False,
+                "topic": topic,
+                "reasoning": f"Answer relevance {relevance:.2f} to the question asked — steering the conversation like a human interviewer.",
+                "candidate_observations": {
+                    "answer_relevance": round(relevance, 2),
+                    "filler_count_this_turn": filler_count,
+                    "word_count": len(user_words),
+                },
+                **avatar,
+            }
+
+        # ── Very Short Answer ──
+        if len(user_words) < 12:
+            bridge = random.choice(BRIDGE_ENCOURAGEMENT) if diff_lower == "beginner" else ""
+            feedback_map = {
+                "beginner": "That's okay! I'd love to hear a bit more detail though.",
+                "intermediate": "That was quite brief. I need you to be more specific.",
+                "advanced": "That answer is too short for this level. I need depth.",
+                "extreme": "I'm going to be direct — that wouldn't pass a phone screen. Expand significantly.",
+            }
+            feedback = feedback_map.get(diff_lower, feedback_map["intermediate"])
+            if bridge:
+                feedback = f"{feedback} {bridge}"
+            next_q = "Can you expand that with one specific situation, your action, and the measurable result?"
+            avatar["avatar_state"]["emotion"] = "CONCERNED" if diff_lower == "beginner" else "SKEPTICAL"
+            return {
+                "feedback": feedback,
+                "next_question": next_q,
+                "should_end": False,
+                "topic": "follow_up",
+                "reasoning": f"Answer too brief ({len(user_words)} words). Requesting expansion.",
+                "candidate_observations": {
+                    "filler_count_this_turn": filler_count,
+                    "word_count": len(user_words),
+                    "star_completeness": star,
+                },
+                **avatar,
+            }
+
+        # ── Filler Overload ──
+        if filler_count >= 5:
+            avatar["avatar_state"]["micro_expression"] = "LIP_COMPRESS"
+            filler_feedback = (
+                f"I noticed quite a few filler words in that answer — about {filler_count}. "
+                "Try pausing silently when you need a moment to think. "
+            )
+        else:
+            filler_feedback = ""
+
+        # ── STAR Method Gap ──
+        missing_star = [k for k, v in star.items() if not v]
+        star_follow_up = ""
+        if missing_star and diff_lower in ("advanced", "extreme"):
+            component = missing_star[0]
+            star_prompts = {
+                "situation": "Set the scene for me — when and where did this happen?",
+                "task": "What exactly was the challenge or goal you were solving?",
+                "action": "What did YOU specifically do? Not the team — you personally.",
+                "result": "What was the measurable outcome? Give me numbers, percentages, or impact.",
+            }
+            star_follow_up = star_prompts.get(component, "")
+
+        # ── Difficulty-Adaptive Behavior ──
+        if diff_lower == "extreme" and quality == "weak":
+            feedback = (
+                f"{filler_feedback}"
+                "I'm going to be direct — that answer is too generic for this level. "
+                "Every claim needs evidence."
+            )
+            next_q = star_follow_up or "What measurable result or technical decision best proves that strength?"
+            avatar["avatar_state"]["emotion"] = "STERN"
+            avatar["avatar_state"]["pose"] = "STEEPLED_FINGERS"
+            topic = "cross_question"
+        elif diff_lower == "advanced" and quality in ("weak", "moderate"):
+            feedback = f"{filler_feedback}Good start, but I'm going to push for evidence now."
+            next_q = star_follow_up or "What was YOUR specific contribution, and what was the quantified result?"
+            avatar["avatar_state"]["emotion"] = "SKEPTICAL"
+            topic = "evidence"
+        elif quality == "strong":
+            bridge = random.choice(BRIDGE_TOPIC_SHIFT)
+            feedback = f"{filler_feedback}{bridge}"
+            topic = "new_topic"
+        else:
+            bridge = random.choice(BRIDGE_FOLLOW_UP) if candidate_turns > 1 else "Understood. Let's build on that."
+            feedback = f"{filler_feedback}{bridge}"
+            topic = questions[(candidate_turns - 1) % len(questions)].get("difficulty", "interview")
+
+        return {
+            "feedback": feedback,
+            "next_question": next_q,
+            "should_end": False,
+            "topic": topic,
+            "reasoning": f"Quality={quality}, fillers={filler_count}, STAR={star}, difficulty={diff_lower}",
+            "candidate_observations": {
+                "filler_count_this_turn": filler_count,
+                "word_count": len(user_words),
+                "star_completeness": star,
+            },
+            **avatar,
+        }
+
+    # ── Normalize ──────────────────────────────────────────────────────
+
+    def _normalize_result(
+        self,
+        result: Dict[str, Any],
+        history: List[Dict[str, str]],
+        user_response: str,
+        use_premium: bool = None,
+        selected_llm: str = None
+    ) -> Dict[str, Any]:
+        result = result or {}
+        should_end = result.get("should_end", False)
+        if isinstance(should_end, str):
+            should_end = should_end.strip().lower() in {"true", "yes", "1"}
+        result["should_end"] = bool(should_end)
+        result.setdefault("feedback", "Understood.")
+        result.setdefault("next_question", "")
+        result.setdefault("topic", "interview")
+        result.setdefault("reasoning", "")
+
+        # Ensure avatar state exists
+        quality = self._assess_answer_quality(user_response, "intermediate")
+        avatar = self._generate_avatar_state(quality, "intermediate", is_ending=result["should_end"])
+        result.setdefault("avatar_state", avatar.get("avatar_state", {}))
+        result.setdefault("vocal_params", avatar.get("vocal_params", {}))
+
+        if result["should_end"]:
+            final_result = self._score_simulation(
+                [*history, {"role": "user", "content": user_response}],
+                use_premium=use_premium,
+                selected_llm=selected_llm
+            )
+            for key, value in final_result.items():
+                result.setdefault(key, value)
+        return result
+
+    # ── Main Entry Point ───────────────────────────────────────────────
+
+    def generate_next_turn(
+        self,
+        history: List[Dict[str, str]],
+        user_response: str,
+        difficulty: str = "intermediate",
+        mode: str = "HR",
+        resume_text: str = "",
+        pitch_text: str = "",
+        covered_topics: List[str] = None,
+        is_vad_pause: bool = False,
+        use_premium: bool = None,
+        selected_llm: str = None,
+        candidate_metrics: dict = None,
+    ) -> Dict[str, Any]:
+        """
+        Processes the user's response and generates the next AI interviewer action.
+        Note: `pitch_text` is currently being used to pass `job_role` from the frontend setup.
+        """
+
+        # 1. Build conversation context
+        context = ""
+        for turn in history:
+            role = "Interviewer" if turn.get("role") == "assistant" else "Candidate"
+            context += f"{role}: {turn.get('content', '')}\n"
+        context += f"Candidate: {user_response}\n"
+
+        # 2. Get strictness config
+        from backend.core.genai_engine import STRICTNESS_MAP
+        strict_config = STRICTNESS_MAP.get(difficulty.lower(), STRICTNESS_MAP["intermediate"])
+
+        # 3. Use LLM only if explicitly enabled (requires GPU model loaded)
+        # LLM is ENABLED by default. Set PITCHPERFECT_DISABLE_SIMULATION_LLM=1 to disable.
+        if os.getenv("PITCHPERFECT_DISABLE_SIMULATION_LLM", "0").lower() in {"1", "true", "yes"}:
+            return self._fallback_turn(history, user_response, difficulty, mode)
+
+        # 3.5 Ground the LLM with a measured semantic relevance signal:
+        # cosine similarity between the question just asked and the answer
+        # given, so "did the answer address the question" is not left to
+        # keyword guessing.
+        last_q = self._last_assistant_question(history)
+        relevance = self._answer_relevance(last_q, user_response)
+        relevance_hint = (
+            f"\n[MEASURED ANSWER RELEVANCE]: {relevance:.2f} "
+            "(cosine similarity between your last question and the candidate's answer; "
+            ">0.45 = on-topic, 0.30-0.45 = partially on-topic, <0.30 = did NOT address your question)"
+            if relevance is not None else ""
+        )
+
+        # 4. Build enhanced system prompt
+        system_prompt = self._build_system_prompt(
+            strict_config, difficulty, mode,
+            resume_text=resume_text,
+            pitch_text=pitch_text,
+            covered_topics=covered_topics or [],
+            is_vad_pause=is_vad_pause,
+            candidate_metrics=candidate_metrics,
+            asked_questions=self._asked_questions(history),
+        )
+        user_prompt = f"[INTERVIEW HISTORY]:\n{context}{relevance_hint}\n\n[GENERATE NEXT TURN]"
+
+        try:
+            response_text = llm_router.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=900,
+                temperature=0.75,
+                use_premium=use_premium,
+                selected_llm=selected_llm
+            )
+
+            result = self._parse_dialogue_json(response_text)
+
+            if result and 'hr_response' in result and 'feedback' not in result:
+                result['feedback'] = result['hr_response']
+
+            if not result or "next_question" not in result:
+                # main JSON turn broke — RETHINK with the cloud model, don't
+                # drop to canned rules
+                result = self._llm_rescue_turn(history, user_response, mode, difficulty,
+                                               use_premium, selected_llm)
+            if not result:
+                result = self._fallback_turn(history, user_response, difficulty, mode)
+
+            return self._normalize_result(result, history, user_response, use_premium, selected_llm)
+
+        except Exception as e:
+            logger.error(f"Dialogue LLM Error: {e}")
+            result = self._llm_rescue_turn(history, user_response, mode, difficulty,
+                                           use_premium, selected_llm)
+            if not result:
+                result = self._fallback_turn(history, user_response, difficulty, mode)
+            return self._normalize_result(result, history, user_response, use_premium, selected_llm)
+
+    @staticmethod
+    def _resolve_tier(use_premium: bool = None, selected_llm: str = None) -> str:
+        """Mirror llm_router's tier resolution so escalation starts from the
+        tier that actually served the failed turn."""
+        if selected_llm:
+            return selected_llm.lower().strip()
+        env_llm = os.getenv("SELECTED_LLM", "").lower().strip()
+        if env_llm in ("nvidia", "groq", "gemini", "kimi"):
+            return env_llm
+        if use_premium is None:
+            use_premium = os.getenv("FORCE_PREMIUM_MODE", "0").lower() in {"1", "true", "yes"}
+        return "gemini" if use_premium else "nvidia"
+
+    # Rescue must never re-ask the tier that just failed: Nvidia escalates to
+    # Groq, Groq to Gemini. Kimi (Think) rescues on Gemini. Gemini stays —
+    # its key x model matrix already rotates internally.
+    _RESCUE_ESCALATION = {"nvidia": "groq", "groq": "gemini", "kimi": "gemini", "gemini": "gemini"}
+
+    def _llm_rescue_turn(
+        self,
+        history: List[Dict[str, str]],
+        user_response: str,
+        mode: str,
+        difficulty: str,
+        use_premium: bool = None,
+        selected_llm: str = None,
+    ) -> Dict[str, Any]:
+        """Second-chance CLOUD-LLM turn with a tiny, unbreakable prompt.
+
+        The full-featured turn asks for a big JSON contract that models
+        sometimes truncate. When that happens a real interviewer doesn't fall
+        back to a script — this ESCALATES to the next tier (Nvidia -> Groq ->
+        Gemini) and asks it to simply THINK and reply in two labelled lines of
+        plain text (nothing to parse-fail), keeping every response genuinely
+        generated, never canned.
+        """
+        try:
+            failed_tier = self._resolve_tier(use_premium, selected_llm)
+            rescue_tier = self._RESCUE_ESCALATION.get(failed_tier, "groq")
+            logger.info(f"🛟 [DialogueManager] Rescue escalation: {failed_tier} -> {rescue_tier}")
+            recent = history[-6:] if history else []
+            convo = "\n".join(
+                f"{'Interviewer' if t.get('role') == 'assistant' else 'Candidate'}: {t.get('content', '')}"
+                for t in recent
+            )
+            asked = "\n".join(f"- {q}" for q in self._asked_questions(history)[-6:])
+            sys = (
+                "You are a sharp, warm, very human senior HR interviewer mid-interview. "
+                "React briefly to the candidate's last answer (mention one concrete detail from it; "
+                "if it didn't actually address your question, say so naturally and either rephrase "
+                "differently or move on — never repeat yourself). Then ask ONE natural next question "
+                "you have not asked before.\n"
+                f"Questions already asked (never re-ask):\n{asked}\n"
+                "Reply in EXACTLY this two-line format, nothing else:\n"
+                "REACTION: <one or two short sentences>\n"
+                "QUESTION: <the single next question>"
+            )
+            text = llm_router.generate(
+                system_prompt=sys,
+                user_prompt=f"{convo}\nCandidate: {user_response}",
+                max_tokens=180,
+                temperature=0.85,
+                use_premium=use_premium,
+                selected_llm=rescue_tier,
+            )
+            if not text:
+                return {}
+            reaction, question = "", ""
+            for line in text.splitlines():
+                s = line.strip()
+                if s.upper().startswith("REACTION:"):
+                    reaction = s[9:].strip()
+                elif s.upper().startswith("QUESTION:"):
+                    question = s[9:].strip()
+            if not question:
+                # tolerate free-form: last sentence ending in '?' is the question
+                qs = [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.endswith("?")]
+                if qs:
+                    question = qs[-1]
+                    reaction = reaction or text.replace(question, "").strip()
+            if not question:
+                return {}
+            quality = self._assess_answer_quality(user_response, difficulty)
+            avatar = self._generate_avatar_state(quality, difficulty.lower(), is_ending=False)
+            logger.info(f"🛟 [DialogueManager] LLM rescue turn used via {rescue_tier} (main JSON turn on {failed_tier} failed).")
+            return {
+                "feedback": reaction,
+                "next_question": question,
+                "should_end": False,
+                "topic": "conversation",
+                "reasoning": f"Rescue turn: escalated {failed_tier} -> {rescue_tier} and rethought the reply in plain text after the structured turn failed.",
+                **avatar,
+            }
+        except Exception as e:
+            logger.warning(f"[DialogueManager] rescue turn failed: {e}")
+            return {}
+
+    def _parse_dialogue_json(self, response_text: str) -> dict:
+        """Parse JSON from dialogue LLM response without requiring feedback.positives."""
+        try:
+            raw = genai_engine._strip_markdown(response_text)
+            # 1. Try direct parse
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+
+            # 2. Try finding balanced {...}
+            start = raw.find('{')
+            if start != -1:
+                depth = 0
+                for i, ch in enumerate(raw[start:], start):
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                return json.loads(raw[start:i+1])
+                            except json.JSONDecodeError:
+                                break
+
+            # 3. Simple repair: close open quotes/brackets/braces
+            repaired = raw.strip()
+            if repaired.count('"') % 2 != 0:
+                repaired += '"'
+            open_braces = repaired.count('{') - repaired.count('}')
+            open_brackets = repaired.count('[') - repaired.count(']')
+            repaired += ']' * max(0, open_brackets)
+            repaired += '}' * max(0, open_braces)
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+
+            logger.warning(f"Failed to parse dialogue JSON: {raw[:200]}")
+            return {}
+        except Exception as e:
+            logger.error(f"_parse_dialogue_json error: {e}")
+            return {}
+
+    def _build_system_prompt(
+        self,
+        strict_config: dict,
+        difficulty: str,
+        mode: str,
+        resume_text: str = "",
+        pitch_text: str = "",
+        covered_topics: List[str] = None,
+        is_vad_pause: bool = False,
+        candidate_metrics: dict = None,
+        asked_questions: List[str] = None,
+    ) -> str:
+        """
+        Build the hyper-realistic, fully generative interviewer system prompt.
+        Every session produces unique, contextual, non-repetitive questions.
+        """
+        covered_topics = covered_topics or []
+        covered_str = ", ".join(covered_topics) if covered_topics else "none yet — this is the beginning"
+        asked_questions = asked_questions or []
+        asked_block = ""
+        if asked_questions:
+            asked_list = "\n".join(f"- {q}" for q in asked_questions[-8:])
+            asked_block = f"""
+QUESTIONS YOU ALREADY ASKED (NEVER ask any of these again, in ANY wording):
+{asked_list}
+"""
+
+        resume_section = f"""
+=== CANDIDATE RESUME ===
+{resume_text.strip() if resume_text.strip() else 'Resume not uploaded — infer from candidate pitch and answers.'}
+=== END RESUME ===""" if resume_text.strip() else """=== RESUME: Not provided. Base questions on candidate's answers and pitch. ==="""
+
+        pitch_section = f"""
+=== JOB ROLE / TARGET POSITION ===
+Candidate is applying for: {pitch_text.strip() if pitch_text.strip() else 'Software Engineer'}
+=== END JOB ROLE ==="""
+
+        difficulty_guide = {
+            "beginner": (
+                "Be encouraging and supportive. Ask simpler, broader questions. "
+                "Build candidate confidence. If they struggle, guide gently without revealing answers."
+            ),
+            "intermediate": (
+                "Behave like a realistic recruiter. Ask moderately detailed questions. "
+                "Expect specific examples. Push for clarity but don't pressure unnecessarily."
+            ),
+            "advanced": (
+                "Be evaluative and analytical. Demand technical depth and reasoning. "
+                "Ask about architecture decisions, tradeoffs, and system thinking. "
+                "Challenge vague answers with surgical follow-ups."
+            ),
+            "extreme": (
+                "FAANG-level pressure interview. Be highly analytical and rigorous. "
+                "Cross-question every claim. Demand numbers, metrics, edge cases. "
+                "If an answer is weak: call it out professionally but firmly. "
+                "Challenge assumptions. Ask 'why not X instead?'"
+            ),
+        }.get(difficulty.lower(), "Behave like a professional HR recruiter.")
+        
+        round_focus = {
+            "self_intro": "Focus purely on their background, experiences, and why they fit the role. Ask them to walk you through their past work.",
+            "technical": "Focus purely on technical, domain-specific questions. For AI/ML or data science roles, ask about Python, data handling, and model deployment. For web development, ask about frameworks, scaling, and state management. Ask coding scenarios and architecture questions.",
+            "hr": "Focus on cultural fit, teamwork, handling conflicts, and their long-term career goals.",
+            "behavioral": "Use the STAR method (Situation, Task, Action, Result). Ask for specific past scenarios where they showed leadership, overcame failure, or dealt with difficult deadlines.",
+        }.get(mode.lower(), "Focus on assessing their overall capability for the job.")
+        
+        role_validation = """
+ROLE VALIDATION:
+Check the Target Role the candidate applied for. If the role is clearly invalid, nonsensical, or just a random name (like 'Somanshu', 'Batman', 'Asdfgh'), you MUST gracefully inform the candidate that the role is unrecognized and end the interview by setting "should_end": true.
+"""
+
+        vad_instruction = ""
+        if is_vad_pause:
+            vad_instruction = """
+[CRITICAL EVENT]: The candidate stopped speaking for 3 seconds. 
+If their last sentence seems incomplete or cut off, you MUST ask 'Have you completed your answer?' or 'Did you want to add anything else?' or handle the silence smartly like a real HR. 
+If their answer was clearly finished, proceed naturally to the next question.
+"""
+
+        cheating_instruction = ""
+        if candidate_metrics:
+            is_reading = candidate_metrics.get("isReading", False)
+            eye_contact = candidate_metrics.get("eyeContactPercent", 100)
+            if is_reading or eye_contact < 40:
+                cheating_instruction = """
+[ANTI-CHEAT ALERT]: The candidate's video analysis shows they might be reading from a script or looking away from the camera. 
+You MUST briefly but firmly ask them to maintain eye contact with the camera and remind them that this is a closed-book interview before asking your next question. Address this naturally as an HR recruiter.
+"""
+
+        return f"""You are an ultra-realistic professional Human Resources interviewer conducting a REAL job interview.
+
+You are NOT a chatbot. You are NOT an assistant.
+You are a real recruiter/interviewer speaking naturally with a real candidate.
+
+INTERVIEW CONTEXT:
+- Mode: {mode.upper()} Interview
+- Target Role: {pitch_text.strip() if pitch_text.strip() else 'Software Engineer'}
+- Difficulty: {difficulty.upper()}
+- Interviewer Persona: {strict_config.get('persona', 'Senior Recruiter, 10+ years experience')}
+
+{resume_section}
+
+{pitch_section}
+
+TOPICS ALREADY COVERED (DO NOT REPEAT THESE): {covered_str}
+{asked_block}
+ANSWER EVALUATION (do this EVERY turn, before responding):
+1. Re-read your last question and the candidate's answer. Judge by MEANING, not keywords:
+   did the answer actually address what was asked? Use the [MEASURED ANSWER RELEVANCE]
+   value when provided.
+2. If the answer addressed the question: react to a CONCRETE specific from it (a number,
+   a tool, a decision) and go deeper or move to a new topic.
+3. If the answer did NOT address the question: say so honestly and specifically
+   ("I was asking about X, but you told me about Y"), then rephrase your question ONCE
+   using COMPLETELY different wording — simpler, more concrete, maybe an example.
+4. If they miss the point a SECOND time on the same question: do NOT ask it a third time.
+   A real interviewer moves on: "No problem, let's come back to that later." and asks
+   about something different. NEVER loop the same question.
+5. Judge factual/logical correctness too: if a claim is technically wrong or internally
+   inconsistent, probe it politely like a knowledgeable human would.
+
+MAANG BENCHMARKING:
+Use your internal knowledge to benchmark this specific job role against top tier MAANG companies (Meta, Amazon, Apple, Netflix, Google). Frame your unique questions exactly how a MAANG interviewer would based on their specific resume and the target role. DO NOT use generic rule-based questions. Create bespoke scenarios and challenges relevant to their listed experience.
+
+DIFFICULTY GUIDANCE:
+{difficulty_guide}
+
+ROUND STRATEGY ({mode.upper()}):
+{round_focus}
+
+{role_validation}
+
+{cheating_instruction}
+
+{vad_instruction}
+
+CRITICAL BEHAVIORAL RULES:
+1. You are a LIVING, BREATHING HUMAN. Never sound like an AI or chatbot.
+2. Every question MUST come from the resume, pitch, or previous answer — not from a generic bank.
+3. NEVER repeat a topic from the covered list: {covered_str}. Find a completely new angle or skill to assess.
+4. If the candidate was vague, cross-question: 'Walk me through exactly what YOU did, step by step.'
+5. If the answer is strong, go deeper: 'Interesting — why that specific approach over alternatives?'
+6. Use natural human transitions: 'That's interesting...', 'Let me push on that...', 'I want to understand...'
+7. After 5-7 quality turns with sufficient evidence, end gracefully — not abruptly.
+8. NEVER say: 'Thank you for your response', 'Great answer!', 'That's a great question.' — These are robotic.
+9. Vary your sentence structure, phrasing, and question depth every turn.
+10. Be genuinely curious, not mechanically evaluative.
+11. If the candidate just answered about a technical skill (e.g., React), your NEXT question MUST NOT be about React. Change the subject to a behavioral aspect or a different technical skill.
+12. CALLBACKS: Periodically reference something the candidate said EARLIER in the interview ('Earlier you mentioned X — how does that square with...?'). Real interviewers hold the whole conversation in mind. Use the history for this.
+13. INTERRUPT LIKE A HUMAN: If the candidate rambles, is repeating themselves, or drifts off-topic, politely cut in and redirect: 'Sorry to jump in — I want to be mindful of time. Let me redirect us...'. If they contradict something they said earlier, interrupt to flag it immediately.
+14. ACKNOWLEDGE SPECIFICS: Your reaction must mention a CONCRETE detail from their last answer (a number, a tool, a decision), never a generic 'okay, noted'.
+
+INTELLIGENCE RULES:
+- Read resume DEEPLY. Extract: projects, tech stack, internships, gaps, inconsistencies, achievements.
+- Cross-check: If candidate claims expertise but resume shows no evidence — probe respectfully.
+- Analyze pitch: Detect vague claims ("passionate about ML") → ask for specific evidence.
+- Resume + answer context should drive 100% of your questions.
+
+HUMAN CONVERSATION STYLE:
+- Use natural pauses in text: commas, dashes, ellipses for thinking moments
+- Occasionally: 'I see what you mean there...' / 'Hmm, that's a specific scenario.' / 'Let me dig into that.'
+- But do NOT overuse fillers — maximum 1 per response
+- Sound like a real person who is genuinely evaluating, not a robot reading a rubric
+
+RETURN ONLY VALID JSON — no markdown, no extra text. The JSON MUST be complete
+and parseable: close every quote and brace, keep string values under 60 words,
+never truncate mid-sentence:
+{{
+  "hr_response": "Natural 1-2 sentence recruiter reaction to what candidate just said",
+  "next_question": "The specific, contextual, non-repetitive interview question",
+  "reasoning": "Internal thought: why this question, what are you probing for",
+  "difficulty_used": "{difficulty.upper()}",
+  "resume_topics_used": ["list of resume items referenced"],
+  "behavior_cue": "friendly|curious|skeptical|evaluating|impressed",
+  "should_end": false,
+  "topic": "3-4 word precise label of the technical or behavioral topic being asked (e.g. 'React Performance', 'Conflict Resolution')",
+  "avatar_state": {{
+    "emotion": "NEUTRAL|CURIOUS|IMPRESSED|SKEPTICAL|CONCERNED|STERN|THOUGHTFUL|CONCLUDING",
+    "pose": "PROFESSIONAL_DEFAULT|LEAN_FORWARD|LEAN_BACK|THINKER_POSE|PROFESSIONAL_NOD|STEEPLED_FINGERS|OPEN_PALMS|NOTE_TAKING",
+    "gaze": "DIRECT|THINKING|NOTES|DRIFT",
+    "micro_expression": "NONE|SUBTLE_SMILE|EYEBROW_RAISE|LIP_COMPRESS|HEAD_TILT"
+  }},
+  "vocal_params": {{
+    "pitch_multiplier": 1.0,
+    "speed_multiplier": 1.0,
+    "pause_before_ms": 800,
+    "filler_prefix": "Hmm..."
+  }}
+}}"""
+
+
+dialogue_manager = DialogueManager()
