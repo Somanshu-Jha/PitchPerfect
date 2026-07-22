@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { apiUrl, apiHeaders } from '@/config/api.config';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
   const [showFeedback, setShowFeedback] = useState(false);
   const [overrideScore, setOverrideScore] = useState(10);
   const [feedbackReason, setFeedbackReason] = useState("");
-  const [feedbackStatus, setFeedbackStatus] = useState<"idle"|"loading"|"success"|"error">("idle");
+  const [feedbackStatus, setFeedbackStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [feedbackMsg, setFeedbackMsg] = useState("");
 
   const submitFeedback = async () => {
@@ -23,9 +24,9 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
     }
     setFeedbackStatus("loading");
     try {
-      const response = await fetch("http://localhost:8000/student/feedback", {
+      const response = await fetch(apiUrl('/student/feedback'), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: apiHeaders({ "Content-Type": "application/json" }),
         // Use a generic user_id for beta testing locally if not provided
         body: JSON.stringify({
           user_id: "beta_tester",
@@ -43,7 +44,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
         setFeedbackStatus("error");
         setFeedbackMsg(data.message || "Feedback rejected by AI Gatekeeper.");
       }
-    } catch(err) {
+    } catch (err) {
       setFeedbackStatus("error");
       setFeedbackMsg("Failed to connect to server.");
     }
@@ -82,16 +83,16 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
 
       <div className="flex justify-between items-end mb-2 px-2">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-100">Interview Analysis</h2>
-          <p className="text-slate-400 mt-1">Review your AI-generated performance metrics.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Interview Analysis</h2>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">Review your AI-generated performance metrics.</p>
         </div>
       </div>
 
       {/* Score + Confidence */}
       <div className="grid md:grid-cols-2 gap-6">
-        
+
         {/* Score Ring */}
-        <Card className="glass-panel p-8 flex flex-col items-center gap-5 border-indigo-500/20 shadow-[0_0_40px_rgba(99,102,241,0.1)] relative overflow-hidden">
+        <Card className="saas-card dark:bg-[#0a0a0a] p-8 flex flex-col items-center gap-5 border-indigo-500/20 shadow-[0_0_40px_rgba(99,102,241,0.1)] relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-transparent pointer-events-none" />
           <h3 className="text-xs uppercase tracking-[0.2em] text-indigo-300 font-semibold z-10">Overall Score</h3>
           <div className="relative w-40 h-40 flex items-center justify-center z-10">
@@ -115,7 +116,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
               </defs>
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-5xl font-bold text-white leading-none">{score}</span>
+              <span className="text-5xl font-bold text-slate-900 dark:text-white leading-none">{score}</span>
               <span className="text-sm text-slate-400 font-medium">/ 100</span>
             </div>
           </div>
@@ -123,7 +124,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
         </Card>
 
         {/* Confidence + Transcript */}
-        <Card className="glass-panel p-8 flex flex-col gap-6">
+        <Card className="saas-card dark:bg-[#0a0a0a] p-8 flex flex-col gap-6">
           <h3 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-semibold">Confidence Level</h3>
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <div className="relative w-28 h-28 flex items-center justify-center">
@@ -141,7 +142,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-4xl font-bold text-white">{confidence}%</span>
+                <span className="text-4xl font-bold text-slate-900 dark:text-white">{confidence}%</span>
               </div>
             </div>
             <span className="text-sm font-semibold uppercase tracking-widest text-cyan-300">{confidenceRaw}</span>
@@ -149,17 +150,17 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
           {transcript && (
             <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-800 mt-2">
               <p className="text-slate-400 text-xs uppercase tracking-wider mb-2 font-semibold">Your Transcript</p>
-              <p className="text-slate-300 text-sm leading-relaxed italic line-clamp-4">"{transcript}"</p>
+              <p className="text-slate-800 dark:text-slate-300 text-sm leading-relaxed italic line-clamp-4">"{transcript}"</p>
             </div>
           )}
         </Card>
       </div>
 
       {/* Feedback */}
-      <Card className="glass-panel p-8 space-y-6 relative overflow-hidden">
+      <Card className="saas-card dark:bg-[#0a0a0a] p-8 space-y-6 relative overflow-hidden">
         <div className="absolute right-0 top-0 w-64 h-64 bg-purple-500/5 blur-[80px] rounded-full pointer-events-none" />
         <h3 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-semibold z-10 relative">AI Feedback</h3>
-        
+
         <div className="grid md:grid-cols-2 gap-6 z-10 relative">
           {/* Positives */}
           <div className="space-y-3">
@@ -169,7 +170,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
             {positives.length > 0 ? positives.map((item, i) => (
               <div key={i} className="flex gap-3 items-start bg-emerald-500/5 border border-emerald-500/20 p-3 rounded-xl">
                 <div className="w-1.5 h-1.5 mt-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                <p className="text-slate-300 text-sm leading-relaxed">{item}</p>
+                <p className="text-black text-sm leading-relaxed font-medium">{item}</p>
               </div>
             )) : (
               <p className="text-slate-500 dark:text-gray-400 text-sm italic">No positive feedback recorded.</p>
@@ -184,7 +185,7 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
             {improvements.length > 0 ? improvements.map((item, i) => (
               <div key={i} className="flex gap-3 items-start bg-rose-500/5 border border-rose-500/20 p-3 rounded-xl">
                 <div className="w-1.5 h-1.5 mt-1.5 rounded-full bg-rose-400 flex-shrink-0" />
-                <p className="text-slate-300 text-sm leading-relaxed">{item}</p>
+                <p className="text-black text-sm leading-relaxed font-medium">{item}</p>
               </div>
             )) : (
               <p className="text-slate-500 dark:text-gray-400 text-sm italic">All areas covered!</p>
@@ -205,25 +206,25 @@ export default function ResultScreen({ resultData, onRetry, onHistory }: { resul
 
       <AnimatePresence>
         {showFeedback && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} 
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
             className="mt-6 bg-slate-900 border border-amber-500/30 p-6 rounded-xl relative">
             <button className="absolute top-4 right-4 text-slate-400 hover:text-white" onClick={() => setShowFeedback(false)}>✕</button>
             <h3 className="text-lg font-bold text-amber-400 mb-2">Help Train the AI</h3>
             <p className="text-sm text-slate-300 mb-4">If you feel the AI evaluated this incorrectly, provide the correct score and explain why. The DeepSeek Gatekeeper will validate your reasoning before injecting it into the training pipeline.</p>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold mb-1 text-slate-200">What should the True Score be? (1-10)</label>
-                <input type="number" min="1" max="10" step="0.5" className="bg-slate-800 border border-slate-700 rounded-md p-2 w-32 text-white" 
+                <input type="number" min="1" max="10" step="0.5" className="bg-slate-800 border border-slate-700 rounded-md p-2 w-32 text-white"
                   value={overrideScore} onChange={e => setOverrideScore(Number(e.target.value))} />
               </div>
               <div>
                 <label className="block text-sm font-semibold mb-1 text-slate-200">Why was the AI wrong? (Required)</label>
-                <textarea rows={3} className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 text-white placeholder:text-slate-500" 
+                <textarea rows={3} className="w-full bg-slate-800 border border-slate-700 rounded-md p-3 text-white placeholder:text-slate-500"
                   placeholder="E.g. The audio was stuttering heavily but the AI gave me a high score anyway..."
                   value={feedbackReason} onChange={e => setFeedbackReason(e.target.value)}></textarea>
               </div>
-              
+
               <div className="flex items-center gap-4">
                 <Button onClick={submitFeedback} disabled={feedbackStatus === "loading"} className="bg-amber-600 hover:bg-amber-500">
                   {feedbackStatus === "loading" ? "Analyzing..." : "Submit Feedback"}

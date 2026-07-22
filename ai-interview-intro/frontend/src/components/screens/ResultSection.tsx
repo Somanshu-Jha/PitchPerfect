@@ -23,6 +23,12 @@ interface ResultSectionProps {
     dlRawScore?: number | null;
     resumeMatched?: string[];
     resumeMissed?: string[];
+    _backendError?: boolean;
+    _errorMessage?: string;
+    agentFeedback?: any;
+    sentenceRewrites?: any[];
+    learningPath?: any;
+    emotionAnalysis?: any;
   } | null;
   isLoading: boolean;
   onRetry: () => void;
@@ -33,10 +39,20 @@ interface ResultSectionProps {
 /** Category badge colors */
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   'RESUME GAP': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  'RESUME MATCH': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
   'DELIVERY': { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' },
   'CONTENT DEPTH': { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' },
   'STRUCTURE': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
   'PROFESSIONAL POLISH': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+  'CONTENT': { bg: 'bg-fuchsia-50', text: 'text-fuchsia-700', border: 'border-fuchsia-200' },
+  'TONE': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
+  'FILLER COUNT': { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
+  'PACE': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
+  'FLUENCY': { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
+  'ENERGY': { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200' },
+  'CONFIDENCE': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+  'GRAMMAR': { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
+  'CLARITY': { bg: 'bg-lime-50', text: 'text-lime-700', border: 'border-lime-200' },
 };
 
 /** Extract [CATEGORY] tag from text */
@@ -58,7 +74,7 @@ function FeedbackItem({ text, type }: { text: string; type: 'strength' | 'improv
   return (
     <li 
       onClick={() => setExpanded(!expanded)}
-      className="flex flex-col p-3 rounded-xl bg-white/40 hover:bg-white/80 transition-all border border-transparent hover:border-white/50 shadow-sm hover:-translate-y-0.5 hover:shadow-md cursor-pointer group"
+      className="flex flex-col p-3 rounded-xl bg-white/40 dark:bg-white/5 hover:bg-white/80 dark:hover:bg-white/10 transition-all border border-transparent hover:border-white/50 dark:hover:border-white/20 shadow-sm hover:-translate-y-0.5 hover:shadow-md cursor-pointer group"
     >
       <div className="flex gap-4 items-start">
         <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 transition-colors ${isStrength ? 'bg-green-100 text-green-600 group-hover:bg-green-200' : 'bg-red-100 text-red-500 group-hover:bg-red-200'}`}>
@@ -116,6 +132,37 @@ export default function ResultSection({ data, isLoading, onRetry, resumeHint, tr
         analysisComplete={!isLoading && data !== null}
         onViewResults={() => setGameWaiting(false)}
       />
+    );
+  }
+
+  // ── Backend Error State ──
+  if (data && data._backendError) {
+    return (
+      <section id="results" className="min-h-[60vh] py-24 px-6 md:px-12 w-full flex items-center justify-center">
+        <FadeIn delay={0} yOffset={20}>
+           <div className="relative w-full max-w-2xl mx-auto rounded-[32px] p-12 md:p-16 flex flex-col items-center text-center gap-8 bg-white dark:bg-neutral-900 border border-red-200 dark:border-red-900/50 shadow-xl overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[150%] h-48 bg-red-500/10 dark:bg-red-500/5 blur-[50px] pointer-events-none z-0" />
+            <div className="relative z-10 w-20 h-20 rounded-full bg-red-50 dark:bg-red-500/10 flex items-center justify-center border border-red-100 dark:border-red-500/20">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div className="relative z-10 space-y-3">
+              <h2 className="text-3xl font-black text-slate-800 dark:text-red-400 tracking-tight">Server Unreachable</h2>
+              <p className="text-slate-500 dark:text-gray-400 font-medium text-base max-w-md leading-relaxed mx-auto">
+                {data._errorMessage || 'Could not connect to the AI backend. Please make sure your server is running.'}
+              </p>
+            </div>
+            <button
+              onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); onRetry(); }}
+              className="relative z-10 btn-primary px-10 py-4 shadow-[0_10px_20px_rgba(239,68,68,0.15)] text-base font-bold tracking-tight hover:-translate-y-1 transition-all mt-4"
+            >
+              Try Again
+            </button>
+          </div>
+        </FadeIn>
+      </section>
     );
   }
 
@@ -247,7 +294,7 @@ export default function ResultSection({ data, isLoading, onRetry, resumeHint, tr
                       {positives.length}
                     </span>
                   </div>
-                  <div className="bg-[#ecfdf5] border border-[#bbf7d0] rounded-2xl p-5 grow shadow-sm">
+                  <div className="bg-[#ecfdf5] dark:bg-emerald-950/20 border border-[#bbf7d0] dark:border-emerald-900/30 rounded-2xl p-5 grow shadow-sm">
                     {positives.length > 0 ? (
                       <ul className="space-y-3">
                         {positives.map((str, i) => (
@@ -273,7 +320,7 @@ export default function ResultSection({ data, isLoading, onRetry, resumeHint, tr
                       {improvements.length}
                     </span>
                   </div>
-                  <div className="bg-[#fef2f2] border border-[#fecaca] rounded-2xl p-5 grow shadow-sm">
+                  <div className="bg-[#fef2f2] dark:bg-rose-950/20 border border-[#fecaca] dark:border-rose-900/30 rounded-2xl p-5 grow shadow-sm">
                     {improvements.length > 0 ? (
                       <ul className="space-y-3">
                         {improvements.map((imp, i) => (
