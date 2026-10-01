@@ -1,13 +1,16 @@
 "use client";
 
+import { API_BASE, apiHeaders } from '../config/api.config';
+
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Eye, EyeOff, Mail, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Eye, EyeOff } from "lucide-react";
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import logo from "../assets/logo.png";
+import LaunchTryBadge from "./LaunchTryBadge";
 
 interface PupilProps {
   size?: number;
@@ -17,8 +20,8 @@ interface PupilProps {
   forceLookY?: number;
 }
 
-const Pupil = ({ 
-  size = 12, 
+const Pupil = ({
+  size = 12,
   maxDistance = 5,
   pupilColor = "black",
   forceLookX,
@@ -64,7 +67,7 @@ const Pupil = ({
     return { x, y };
   };
 
-  const pupilPosition = calculatePupilPosition();
+  const pupilPosition = { x: forceLookX ?? 0, y: forceLookY ?? 0 };
 
   return (
     <div
@@ -95,9 +98,9 @@ interface EyeBallProps {
   forceLookY?: number;
 }
 
-const EyeBall = ({ 
-  size = 48, 
-  pupilSize = 16, 
+const EyeBall = ({
+  size = 48,
+  pupilSize = 16,
   maxDistance = 10,
   eyeColor = "white",
   pupilColor = "black",
@@ -145,7 +148,7 @@ const EyeBall = ({
     return { x, y };
   };
 
-  const pupilPosition = calculatePupilPosition();
+  const pupilPosition = { x: forceLookX ?? 0, y: forceLookY ?? 0 };
 
   return (
     <div
@@ -184,10 +187,11 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot-password" | "reset-password">("login");
   const [mouseX, setMouseX] = useState<number>(0);
   const [mouseY, setMouseY] = useState<number>(0);
   const [isPurpleBlinking, setIsPurpleBlinking] = useState(false);
@@ -200,7 +204,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
   const yellowRef = useRef<HTMLDivElement>(null);
   const orangeRef = useRef<HTMLDivElement>(null);
 
-  const API_BASE = "http://localhost:8000";
+  // API_BASE imported from config/api.config.ts
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -310,13 +314,64 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
   const yellowPos = calculatePosition(yellowRef);
   const orangePos = calculatePosition(orangeRef);
 
-  const switchMode = (newMode: "login" | "signup") => {
+  const switchMode = (newMode: "login" | "signup" | "forgot-password" | "reset-password") => {
     setMode(newMode);
     setError("");
     setSuccessMessage("");
     setPassword("");
     setConfirmPassword("");
     setName("");
+    setResetToken("");
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    setError("");
+    setSuccessMessage("");
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/google`, {
+        method: "POST",
+        credentials: "include",
+        headers: apiHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ credential: credentialResponse.credential }),
+      });
+      
+      // Backend offline (503 from worker when tunnel not running)
+      if (res.status === 503) {
+        setError("The AI server is offline right now. Please ask the admin to start the backend.");
+        setIsLoading(false);
+        return;
+      }
+      
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        console.error("Non-JSON response:", text);
+        throw new Error(`Server returned an unexpected response (${res.status})`);
+      }
+
+      if (data?.backend_offline) {
+        setError("The AI server is offline right now. Please ask the admin to start the backend.");
+        setIsLoading(false);
+        return;
+      }
+      
+      if (data.success) {
+        localStorage.setItem("auth_email", data.user?.email || "");
+        localStorage.setItem("auth_name", data.user?.name || "User");
+        console.log("✅ Google Login successful!");
+        if (onLogin) onLogin();
+      } else {
+        setError(data.message || "Google Login failed.");
+      }
+    } catch (err: any) {
+      setError("Unable to connect to server for Google Login.");
+      console.error("❌ Google Login fetch error:", err);
+    }
+    setIsLoading(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -324,6 +379,66 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
     setError("");
     setSuccessMessage("");
     setIsLoading(true);
+
+    // ── FORGOT PASSWORD MODE ──
+    if (mode === "forgot-password") {
+      try {
+        const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+          method: "POST",
+          credentials: "include",
+          headers: apiHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ email }),
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          setSuccessMessage(data.message + (data.reset_token ? ` (Token: ${data.reset_token})` : ""));
+          if (data.reset_token) {
+            setResetToken(data.reset_token);
+          }
+        } else {
+          setError(data.message || "Failed to process request.");
+        }
+      } catch (err) {
+        setError("Unable to connect to server.");
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    // ── RESET PASSWORD MODE ──
+    if (mode === "reset-password") {
+      if (password !== confirmPassword) {
+        setError("Passwords do not match.");
+        setIsLoading(false);
+        return;
+      }
+      if (password.length < 4) {
+        setError("Password must be at least 4 characters.");
+        setIsLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE}/auth/reset-password`, {
+          method: "POST",
+          credentials: "include",
+          headers: apiHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ token: resetToken, new_password: password }),
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          setSuccessMessage("Password reset successful! You can now log in.");
+          setTimeout(() => switchMode("login"), 2000);
+        } else {
+          setError(data.message || "Failed to reset password.");
+        }
+      } catch (err) {
+        setError("Unable to connect to server.");
+      }
+      setIsLoading(false);
+      return;
+    }
 
     // ── SIGNUP MODE ──
     if (mode === "signup") {
@@ -346,13 +461,13 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
       try {
         const res = await fetch(`${API_BASE}/auth/signup`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          headers: apiHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ email, password, name: name.trim() }),
         });
         const data = await res.json();
 
-        if (data.success && data.token) {
-          localStorage.setItem("auth_token", data.token);
+      if (data.success) {
           localStorage.setItem("auth_email", data.user?.email || email);
           localStorage.setItem("auth_name", name.trim());
           console.log("✅ Signup successful!");
@@ -374,13 +489,29 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        headers: apiHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
+      
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        console.error("Non-JSON response:", text);
+        throw new Error(`Server returned an unexpected response (${res.status})`);
+      }
 
-      if (data.success && data.token) {
-        localStorage.setItem("auth_token", data.token);
+      // Backend offline (503 from worker when tunnel not running)
+      if (res.status === 503 || data?.backend_offline) {
+        setError("The AI server is offline right now. Please ask the admin to start the backend.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (data.success) {
         localStorage.setItem("auth_email", data.user?.email || email);
         console.log("✅ Login successful!");
         if (onLogin) onLogin();
@@ -388,7 +519,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
         setError(data.message || "Invalid email or password. Please try again.");
         console.log("❌ Login failed:", data.message);
       }
-    } catch (err) {
+    } catch (err: any) {
       setError("Unable to connect to server. Please try again.");
       console.error("❌ Login fetch error:", err);
     }
@@ -421,7 +552,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
           {/* Cartoon Characters */}
           <div className="relative" style={{ width: '550px', height: '400px' }}>
             {/* Purple tall rectangle character - Back layer */}
-            <div 
+            <div
               ref={purpleRef}
               className="absolute bottom-0 transition-all duration-700 ease-in-out"
               style={{
@@ -434,35 +565,35 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                 transform: (password.length > 0 && showPassword)
                   ? `skewX(0deg)`
                   : (isTyping || (password.length > 0 && !showPassword))
-                    ? `skewX(${(purplePos.bodySkew || 0) - 12}deg) translateX(40px)` 
+                    ? `skewX(${(purplePos.bodySkew || 0) - 12}deg) translateX(40px)`
                     : `skewX(${purplePos.bodySkew || 0}deg)`,
                 transformOrigin: 'bottom center',
               }}
             >
               {/* Eyes */}
-              <div 
+              <div
                 className="absolute flex gap-8 transition-all duration-700 ease-in-out"
                 style={{
                   left: (password.length > 0 && showPassword) ? `${20}px` : isLookingAtEachOther ? `${55}px` : `${45 + purplePos.faceX}px`,
                   top: (password.length > 0 && showPassword) ? `${35}px` : isLookingAtEachOther ? `${65}px` : `${40 + purplePos.faceY}px`,
                 }}
               >
-                <EyeBall 
-                  size={18} 
-                  pupilSize={7} 
-                  maxDistance={5} 
-                  eyeColor="white" 
-                  pupilColor="#2D2D2D" 
+                <EyeBall
+                  size={18}
+                  pupilSize={7}
+                  maxDistance={5}
+                  eyeColor="white"
+                  pupilColor="#2D2D2D"
                   isBlinking={isPurpleBlinking}
                   forceLookX={(password.length > 0 && showPassword) ? (isPurplePeeking ? 4 : -4) : isLookingAtEachOther ? 3 : undefined}
                   forceLookY={(password.length > 0 && showPassword) ? (isPurplePeeking ? 5 : -4) : isLookingAtEachOther ? 4 : undefined}
                 />
-                <EyeBall 
-                  size={18} 
-                  pupilSize={7} 
-                  maxDistance={5} 
-                  eyeColor="white" 
-                  pupilColor="#2D2D2D" 
+                <EyeBall
+                  size={18}
+                  pupilSize={7}
+                  maxDistance={5}
+                  eyeColor="white"
+                  pupilColor="#2D2D2D"
                   isBlinking={isPurpleBlinking}
                   forceLookX={(password.length > 0 && showPassword) ? (isPurplePeeking ? 4 : -4) : isLookingAtEachOther ? 3 : undefined}
                   forceLookY={(password.length > 0 && showPassword) ? (isPurplePeeking ? 5 : -4) : isLookingAtEachOther ? 4 : undefined}
@@ -471,7 +602,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
             </div>
 
             {/* Black tall rectangle character - Middle layer */}
-            <div 
+            <div
               ref={blackRef}
               className="absolute bottom-0 transition-all duration-700 ease-in-out"
               style={{
@@ -486,35 +617,35 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                   : isLookingAtEachOther
                     ? `skewX(${(blackPos.bodySkew || 0) * 1.5 + 10}deg) translateX(20px)`
                     : (isTyping || (password.length > 0 && !showPassword))
-                      ? `skewX(${(blackPos.bodySkew || 0) * 1.5}deg)` 
+                      ? `skewX(${(blackPos.bodySkew || 0) * 1.5}deg)`
                       : `skewX(${blackPos.bodySkew || 0}deg)`,
                 transformOrigin: 'bottom center',
               }}
             >
               {/* Eyes */}
-              <div 
+              <div
                 className="absolute flex gap-6 transition-all duration-700 ease-in-out"
                 style={{
                   left: (password.length > 0 && showPassword) ? `${10}px` : isLookingAtEachOther ? `${32}px` : `${26 + blackPos.faceX}px`,
                   top: (password.length > 0 && showPassword) ? `${28}px` : isLookingAtEachOther ? `${12}px` : `${32 + blackPos.faceY}px`,
                 }}
               >
-                <EyeBall 
-                  size={16} 
-                  pupilSize={6} 
-                  maxDistance={4} 
-                  eyeColor="white" 
-                  pupilColor="#2D2D2D" 
+                <EyeBall
+                  size={16}
+                  pupilSize={6}
+                  maxDistance={4}
+                  eyeColor="white"
+                  pupilColor="#2D2D2D"
                   isBlinking={isBlackBlinking}
                   forceLookX={(password.length > 0 && showPassword) ? -4 : isLookingAtEachOther ? 0 : undefined}
                   forceLookY={(password.length > 0 && showPassword) ? -4 : isLookingAtEachOther ? -4 : undefined}
                 />
-                <EyeBall 
-                  size={16} 
-                  pupilSize={6} 
-                  maxDistance={4} 
-                  eyeColor="white" 
-                  pupilColor="#2D2D2D" 
+                <EyeBall
+                  size={16}
+                  pupilSize={6}
+                  maxDistance={4}
+                  eyeColor="white"
+                  pupilColor="#2D2D2D"
                   isBlinking={isBlackBlinking}
                   forceLookX={(password.length > 0 && showPassword) ? -4 : isLookingAtEachOther ? 0 : undefined}
                   forceLookY={(password.length > 0 && showPassword) ? -4 : isLookingAtEachOther ? -4 : undefined}
@@ -523,7 +654,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
             </div>
 
             {/* Orange semi-circle character - Front left */}
-            <div 
+            <div
               ref={orangeRef}
               className="absolute bottom-0 transition-all duration-700 ease-in-out"
               style={{
@@ -538,7 +669,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
               }}
             >
               {/* Eyes - just pupils, no white */}
-              <div 
+              <div
                 className="absolute flex gap-8 transition-all duration-200 ease-out"
                 style={{
                   left: (password.length > 0 && showPassword) ? `${50}px` : `${82 + (orangePos.faceX || 0)}px`,
@@ -551,7 +682,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
             </div>
 
             {/* Yellow tall rectangle character - Front right */}
-            <div 
+            <div
               ref={yellowRef}
               className="absolute bottom-0 transition-all duration-700 ease-in-out"
               style={{
@@ -566,7 +697,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
               }}
             >
               {/* Eyes - just pupils, no white */}
-              <div 
+              <div
                 className="absolute flex gap-6 transition-all duration-200 ease-out"
                 style={{
                   left: (password.length > 0 && showPassword) ? `${20}px` : `${52 + (yellowPos.faceX || 0)}px`,
@@ -577,7 +708,7 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                 <Pupil size={12} maxDistance={5} pupilColor="#2D2D2D" forceLookX={(password.length > 0 && showPassword) ? -5 : undefined} forceLookY={(password.length > 0 && showPassword) ? -4 : undefined} />
               </div>
               {/* Horizontal line for mouth */}
-              <div 
+              <div
                 className="absolute w-20 h-[4px] bg-[#2D2D2D] rounded-full transition-all duration-200 ease-out"
                 style={{
                   left: (password.length > 0 && showPassword) ? `${10}px` : `${40 + (yellowPos.faceX || 0)}px`,
@@ -588,7 +719,8 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
           </div>
         </div>
 
-        <div className="relative z-20 flex items-center gap-8 text-sm text-primary-foreground/60">
+        <div className="relative z-20 flex flex-wrap items-center gap-6 text-sm text-primary-foreground/60">
+          <LaunchTryBadge />
           <a href="#" className="hover:text-primary-foreground transition-colors">
             Privacy Policy
           </a>
@@ -627,11 +759,17 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
 
           {/* Header — changes based on mode */}
           <div className="text-center mb-10">
-            <h1 className="text-3xl font-bold tracking-tight mb-2">
-              {mode === "login" ? "Welcome back!" : "Create your account"}
+            <h1 className="text-3xl font-bold mb-2">
+              {mode === "login" ? "Welcome back" 
+                : mode === "signup" ? "Create an account"
+                : mode === "forgot-password" ? "Reset Password"
+                : "Set New Password"}
             </h1>
             <p className="text-muted-foreground text-sm">
-              {mode === "login" ? "Please enter your details" : "Fill in the details below to get started"}
+              {mode === "login" ? "Please enter your details" 
+                : mode === "signup" ? "Fill in the details below to get started"
+                : mode === "forgot-password" ? "Enter your email to receive a reset link"
+                : "Enter your new password below"}
             </p>
           </div>
 
@@ -656,26 +794,51 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="anna@gmail.com"
-                value={email}
-                autoComplete="off"
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-                onFocus={() => setIsTyping(true)}
-                onBlur={() => setIsTyping(false)}
-                required
-                className="h-12 bg-background dark:bg-black border-border/60 focus:border-primary"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-              <div className="relative">
+            {/* Email field — all modes except reset-password */}
+            {mode !== "reset-password" && (
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium">Email</Label>
                 <Input
+                  id="email"
+                  type="email"
+                  placeholder="anna@gmail.com"
+                  value={email}
+                  autoComplete="off"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                  onFocus={() => setIsTyping(true)}
+                  onBlur={() => setIsTyping(false)}
+                  required
+                  className="h-12 bg-background dark:bg-black border-border/60 focus:border-primary"
+                />
+              </div>
+            )}
+            
+            {/* Reset Token field — reset-password only */}
+            {mode === "reset-password" && (
+              <div className="space-y-2">
+                <Label htmlFor="resetToken" className="text-sm font-medium">Reset Token</Label>
+                <Input
+                  id="resetToken"
+                  type="text"
+                  placeholder="Paste your reset token here"
+                  value={resetToken}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setResetToken(e.target.value)}
+                  onFocus={() => setIsTyping(true)}
+                  onBlur={() => setIsTyping(false)}
+                  required
+                  className="h-12 bg-background dark:bg-black border-border/60 focus:border-primary"
+                />
+              </div>
+            )}
+
+            {/* Password field — login, signup, reset-password */}
+            {mode !== "forgot-password" && (
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-medium">
+                  {mode === "reset-password" ? "New Password" : "Password"}
+                </Label>
+                <div className="relative">
+                  <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
@@ -697,9 +860,10 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                 </button>
               </div>
             </div>
+            )}
 
-            {/* Confirm password — signup only */}
-            {mode === "signup" && (
+            {/* Confirm password — signup and reset-password only */}
+            {(mode === "signup" || mode === "reset-password") && (
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirm Password</Label>
                 <div className="relative">
@@ -728,12 +892,13 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
                     Remember for 30 days
                   </Label>
                 </div>
-                <a
-                  href="#"
+                <button
+                  type="button"
+                  onClick={() => switchMode("forgot-password")}
                   className="text-sm text-primary hover:underline font-medium"
                 >
                   Forgot password?
-                </a>
+                </button>
               </div>
             )}
 
@@ -749,29 +914,47 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
               </div>
             )}
 
-            <Button 
-              type="submit" 
-              className="w-full h-12 text-base font-medium" 
-              size="lg" 
+            <Button
+              type="submit"
+              className="w-full h-12 text-base font-medium"
+              size="lg"
               disabled={isLoading}
             >
               {isLoading
-                ? (mode === "login" ? "Signing in..." : "Creating account...")
-                : (mode === "login" ? "Log in" : "Create Account")}
+                ? (mode === "login" ? "Signing in..." : mode === "signup" ? "Creating account..." : "Processing...")
+                : (mode === "login" ? "Log in" : mode === "signup" ? "Create Account" : mode === "forgot-password" ? "Send Reset Link" : "Reset Password")}
             </Button>
+
+            {/* Show link to switch to reset password mode if token is provided manually */}
+            {mode === "forgot-password" && (
+                <div className="text-center mt-2">
+                  <button
+                    type="button"
+                    onClick={() => switchMode("reset-password")}
+                    className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    Already have a reset token?
+                  </button>
+                </div>
+            )}
           </form>
 
           {/* Social Login — login only */}
           {mode === "login" && (
             <div className="mt-6">
-              <Button 
-                variant="outline" 
-                className="w-full h-12 bg-background dark:bg-black border-border/60 hover:bg-accent"
-                type="button"
-              >
-                <Mail className="mr-2 size-5" />
-                Log in with Google
-              </Button>
+              <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "1036329415842-q4l0t8t1q2i2ovkntntv2c933kfr6oih.apps.googleusercontent.com"}>
+                <div className="w-full flex justify-center">
+                  <GoogleLogin
+                    onSuccess={handleGoogleSuccess}
+                    onError={() => setError("Google Login failed")}
+                    theme="filled_black"
+                    text="continue_with"
+                    shape="rectangular"
+                    size="large"
+                    width="100%"
+                  />
+                </div>
+              </GoogleOAuthProvider>
             </div>
           )}
 
@@ -790,16 +973,20 @@ export function LoginPage({ onLogin }: { onLogin?: () => void }) {
               </>
             ) : (
               <>
-                Already have an account?{" "}
+                Back to{" "}
                 <button
                   type="button"
                   onClick={() => switchMode("login")}
                   className="text-foreground font-medium hover:underline"
                 >
-                  Log in
+                  Login
                 </button>
               </>
             )}
+          </div>
+
+          <div className="mt-8 flex justify-center">
+            <LaunchTryBadge />
           </div>
         </div>
       </div>

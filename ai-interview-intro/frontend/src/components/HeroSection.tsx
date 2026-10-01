@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import DeviceMock from './DeviceMock';
 import FadeIn from './FadeIn';
+import LaunchTryBadge from './LaunchTryBadge';
 
 interface HeroSectionProps {
   onDiveIn: () => void;
@@ -26,42 +27,34 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
 
   return (
     <>
-    <div className="fixed top-[20px] left-1/2 -translate-x-1/2 z-[9999] w-full flex justify-center pointer-events-none">
-
-  <div className="relative w-[860px] h-[58px] rounded-full p-[1px] bg-gradient-to-r from-blue-400/40 via-purple-400/40 to-pink-400/40 shadow-[0_0_25px_rgba(99,102,241,0.25)]">
-
-    {/* 🔥 Inner fill */}
-    <div className="relative w-full h-full rounded-full bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 backdrop-blur-xl flex items-center overflow-hidden">
-
-      {/* ✨ edge fade */}
-      <div className="absolute left-0 top-0 h-full w-24 bg-gradient-to-r from-white to-transparent z-10"></div>
-      <div className="absolute right-0 top-0 h-full w-24 bg-gradient-to-l from-white to-transparent z-10"></div>
-
-      {/* 🚂 scrolling text */}
-      <div className="animate-marquee flex whitespace-nowrap gap-16 px-8 text-[15px] font-semibold text-slate-800 dark:text-white">
-
-        <span>🚀 Speak better. Crack interviews faster.</span>
-        <span>🎯 AI-powered feedback in seconds.</span>
-        <span>💡 Improve clarity, confidence & structure.</span>
-        <span>⚡ Results in under 30 seconds.</span>
-
-        {/* duplicate */}
-        <span>🚀 Speak better. Crack interviews faster.</span>
-        <span>🎯 AI-powered feedback in seconds.</span>
-        <span>💡 Improve clarity, confidence & structure.</span>
-        <span>⚡ Results in under 30 seconds.</span>
-
-      </div>
-
-    </div>
-  </div>
-</div>
-
-      {/* 🔻 HERO SECTION (unchanged) */}
       <section
         id="hero"
-        className="relative min-h-screen flex items-center overflow-hidden bg-[#FFFAF0] pt-10px"
+        className="relative min-h-screen flex items-center overflow-hidden bg-[#FFFAF0] dark:bg-black transition-colors duration-300 pt-[100px]"
       >
+        <div className="absolute top-[80px] left-1/2 -translate-x-1/2 z-[50] w-full flex justify-center pointer-events-none">
+          <div className="relative w-[860px] h-[58px] rounded-full p-[1px] bg-gradient-to-r from-blue-400/40 via-purple-400/40 to-pink-400/40 shadow-[0_0_25px_rgba(99,102,241,0.25)]">
+            {/* Inner fill */}
+            <div className="relative w-full h-full rounded-full bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 backdrop-blur-xl flex items-center overflow-hidden">
+              {/* edge fade */}
+              <div className="absolute left-0 top-0 h-full w-24 bg-gradient-to-r from-white dark:from-black to-transparent z-10"></div>
+              <div className="absolute right-0 top-0 h-full w-24 bg-gradient-to-l from-white dark:from-black to-transparent z-10"></div>
+
+              {/* 🚂 scrolling text */}
+              <div className="animate-marquee flex whitespace-nowrap gap-16 px-8 text-[15px] font-semibold text-slate-800 dark:text-white">
+                <span>🚀 Speak better. Crack interviews faster.</span>
+                <span>🎯 AI-powered feedback in seconds.</span>
+                <span>💡 Improve clarity, confidence & structure.</span>
+                <span>⚡ Results in under 30 seconds.</span>
+
+                {/* duplicate */}
+                <span>🚀 Speak better. Crack interviews faster.</span>
+                <span>🎯 AI-powered feedback in seconds.</span>
+                <span>💡 Improve clarity, confidence & structure.</span>
+                <span>⚡ Results in under 30 seconds.</span>
+              </div>
+            </div>
+          </div>
+        </div>
         {/* Glow */}
         <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-transparent blur-2xl opacity-60 pointer-events-none" />
 
@@ -76,11 +69,14 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
           <div className="flex flex-col gap-8 lg:-ml-10 xl:-ml-16">
 
             <FadeIn delay={0} yOffset={20}>
-              <div className="inline-flex items-center gap-2 self-start py-1.5 px-3.5 rounded-full bg-white dark:bg-black border border-slate-200 dark:border-white/20 shadow-sm">
-                <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                <span className="text-[10.5px] font-black tracking-[0.08em] text-slate-500 dark:text-gray-400 uppercase">
-                  PitchPerfect · v1.0
-                </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex items-center gap-2 py-1.5 px-3.5 rounded-full bg-white dark:bg-neutral-900 border border-slate-200 dark:border-neutral-800 shadow-sm transition-colors duration-300">
+                  <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                  <span className="text-[10.5px] font-black tracking-[0.08em] text-slate-500 dark:text-neutral-400 uppercase">
+                    PitchPerfect · v3.0
+                  </span>
+                </div>
+                <LaunchTryBadge />
               </div>
             </FadeIn>
 
@@ -94,7 +90,7 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
 
               <FadeIn delay={280} yOffset={20}>
                 <div className="space-y-4">
-                  <p className="text-[1.1rem] text-slate-500 dark:text-gray-400 max-w-[680px] leading-relaxed">
+                  <p className="text-[1.1rem] text-slate-500 dark:text-neutral-300 max-w-[680px] leading-relaxed transition-colors duration-300">
                     Record your interview introduction and find out exactly where
                     you're losing the listener — then fix it before the real thing.
                   </p>
@@ -102,23 +98,23 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center gap-3">
 
-                      <div className="flex items-center gap-2 bg-white dark:bg-black px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/20 shadow-sm">
+                      <div className="flex items-center gap-2 bg-white dark:bg-neutral-900 px-3 py-1.5 rounded-full border border-slate-200 dark:border-neutral-800 shadow-sm transition-colors duration-300">
                         <span>👥</span>
-                        <span className="text-[12px] text-slate-500 dark:text-gray-400">
+                        <span className="text-[12px] text-slate-500 dark:text-neutral-400">
                           Built for <b className="text-slate-800 dark:text-white">job seekers & developers</b>
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 bg-white dark:bg-black px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/20 shadow-sm">
+                      <div className="flex items-center gap-2 bg-white dark:bg-neutral-900 px-3 py-1.5 rounded-full border border-slate-200 dark:border-neutral-800 shadow-sm transition-colors duration-300">
                         <span>🎙️</span>
-                        <span className="text-[12px] text-slate-500 dark:text-gray-400">
+                        <span className="text-[12px] text-slate-500 dark:text-neutral-400">
                           Works with <b className="text-slate-800 dark:text-white">any mic</b>
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 bg-white dark:bg-black px-3 py-1.5 rounded-full border border-slate-200 dark:border-white/20 shadow-sm">
+                      <div className="flex items-center gap-2 bg-white dark:bg-neutral-900 px-3 py-1.5 rounded-full border border-slate-200 dark:border-neutral-800 shadow-sm transition-colors duration-300">
                         <span>⚡</span>
-                        <span className="text-[12px] text-slate-500 dark:text-gray-400">
+                        <span className="text-[12px] text-slate-500 dark:text-neutral-400">
                           Results in <b className="text-slate-800 dark:text-white">under 30 seconds</b>
                         </span>
                       </div>
@@ -126,7 +122,7 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
                     </div>
 
                     <p className="text-[13px] text-emerald-600 font-semibold">
-                      ✅ Free to try — no account needed
+                      ✅ Free to try — accessible to all
                     </p>
                   </div>
 
@@ -152,19 +148,19 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
                 ].map((f, i) => (
                   <div
                     key={i}
-                    className="group flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white dark:bg-black border border-slate-100 dark:border-white/10 shadow-sm
+                    className="group flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white dark:bg-neutral-900 border border-slate-100 dark:border-neutral-800 shadow-sm
                                hover:shadow-[0_8px_24px_rgba(37,99,235,0.1)] hover:border-blue-200/60
                                hover:-translate-y-1 hover:scale-[1.01]
-                               transition-all duration-200 ease-in-out"
+                               transition-all duration-300 ease-in-out"
                   >
-                    <p className="text-[12px] font-bold text-slate-700 dark:text-gray-200">{f.title}</p>
-                    <p className="text-[10.5px] text-slate-400">{f.desc}</p>
+                    <p className="text-[13px] font-bold text-slate-700 dark:text-neutral-200">{f.title}</p>
+                    <p className="text-[12px] text-slate-400 dark:text-yellow-400">{f.desc}</p>
                   </div>
                 ))}
               </div>
             </FadeIn>
 
-            <FadeIn delay={560} yOffset={20} className="flex flex-col sm:flex-row gap-4">
+            <FadeIn delay={560} yOffset={20} className="flex flex-wrap items-center gap-4">
               <button
                 onClick={onDiveIn}
                 className="group btn-primary px-9 py-3.5 text-[15px] font-bold rounded-xl"
@@ -172,9 +168,14 @@ export default function HeroSection({ onDiveIn }: HeroSectionProps) {
                 Try your intro →
               </button>
 
-              <button className="text-[13.5px] text-slate-400">
+              <button 
+                onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+                className="text-[13.5px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
                 See how it works →
               </button>
+
+              <LaunchTryBadge />
             </FadeIn>
 
           </div>

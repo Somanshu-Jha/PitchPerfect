@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { apiUrl, apiHeaders } from './config/api.config';
 import HeroSection from './components/HeroSection';
 import RecorderSection from './components/RecorderSection';
 import ResultSection from './components/screens/ResultSection';
@@ -6,8 +7,11 @@ import Navbar from './components/Navbar';
 import FeaturesSection from './components/FeaturesSection';
 import AboutSection from './components/AboutSection';
 import HistoryScreen from './components/screens/HistoryScreen';
+import RealtimeInterview from './components/screens/RealtimeInterview';
 import { LoginPage } from './components/animated-characters-login-page';
+
 import DeveloperControls from './components/DeveloperControls';
+import LaunchTryBadge from './components/LaunchTryBadge';
 import logo from './assets/logo.png';
 /**
  * App – single-page scroll application.
@@ -19,35 +23,29 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSimulation, setShowSimulation] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [strictness, setStrictness] = useState('intermediate');
+  const [strictness, setStrictness] = useState(() => localStorage.getItem('strictness') || 'intermediate');
   const [resumeHint, setResumeHint] = useState('');
   const [transcriptHint, setTranscriptHint] = useState('');
 
   // ── Persistent Login: Check token on app load ──
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      setIsCheckingAuth(false);
-      return;
-    }
-    fetch('http://localhost:8000/auth/verify-token', {
+    fetch(apiUrl('/auth/verify-token'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
+      credentials: 'include',
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
     })
       .then(res => res.json())
       .then(data => {
         if (data.success) {
           setIsLoggedIn(true);
         } else {
-          localStorage.removeItem('auth_token');
           localStorage.removeItem('auth_email');
         }
       })
       .catch(() => {
-        // Server offline: keep token, show login
-        localStorage.removeItem('auth_token');
+        // Server offline: clear stale tokens
         localStorage.removeItem('auth_email');
       })
       .finally(() => setIsCheckingAuth(false));
@@ -74,6 +72,14 @@ function App() {
     document.getElementById('recorder')?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Logout handler — clears auth and returns to login
+  const handleLogout = async () => {
+    await fetch(apiUrl('/auth/logout'), { method: 'POST', credentials: 'include' }).catch(() => undefined);
+    localStorage.removeItem('auth_email');
+    localStorage.removeItem('auth_name');
+    setIsLoggedIn(false);
+  };
+
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background dark:bg-black">
@@ -82,6 +88,7 @@ function App() {
     );
   }
 
+  // ── Not logged in → show Login Page ──
   if (!isLoggedIn) {
     return <LoginPage onLogin={() => setIsLoggedIn(true)} />;
   }
@@ -90,10 +97,18 @@ function App() {
     return <HistoryScreen onBack={() => setShowHistory(false)} />;
   }
 
-  return (
-    <div className="min-h-screen font-sans text-base relative">
-      <Navbar onOpenHistory={() => setShowHistory(true)} />
+  if (showSimulation) {
+    return <RealtimeInterview onBack={() => setShowSimulation(false)} />;
+  }
 
+  return (
+    <div className="min-h-screen font-sans text-base relative bg-white dark:bg-black transition-colors duration-300">
+      <Navbar 
+        onOpenHistory={() => setShowHistory(true)} 
+        onOpenSimulation={() => setShowSimulation(true)}
+        onLogout={handleLogout} 
+      />
+      
       <HeroSection onDiveIn={scrollToRecorder} />
 
       <div className="divider-subtle" />
@@ -129,14 +144,14 @@ function App() {
       <FeaturesSection onStartRecording={scrollToRecorder} />
       <AboutSection onStartRecording={scrollToRecorder} />
 
-      <div className="bg-slate-50/50 py-12 border-t border-slate-100 dark:border-white/10">
-        <DeveloperControls 
+      <div className="bg-slate-50 dark:bg-black py-12 border-t border-slate-100 dark:border-neutral-800 transition-colors duration-300">
+        <DeveloperControls
           currentStrictness={strictness}
           onStrictnessChange={setStrictness}
         />
       </div>
 
-      <footer className="bg-white dark:bg-black border-t border-slate-100 dark:border-white/10">
+      <footer className="bg-white dark:bg-black border-t border-slate-100 dark:border-neutral-900 transition-colors duration-300">
         {/* Main grid */}
         <div className="max-w-6xl mx-auto px-6 py-12 grid grid-cols-1 md:grid-cols-4 gap-10">
 
@@ -161,6 +176,9 @@ function App() {
             <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
               AI-powered platform to analyze your interview introduction and improve clarity, confidence, and impact.
             </p>
+            <div className="pt-1">
+              <LaunchTryBadge />
+            </div>
           </div>
 
           {/* Section 2 – Product */}
@@ -216,7 +234,7 @@ function App() {
           <div className="flex flex-col gap-3">
             <h4 className="text-sm font-semibold text-slate-700 dark:text-gray-200 tracking-wide">Contact</h4>
             <ul className="flex flex-col gap-2">
-              {['somanshujha1@gmail.com', 'akashkumar15773728p@gmail.com', 'itzshonemshery@gmail.com'].map((email) => (
+              {['somanshujha1@gmail.com', 'akashkumar15773728p@gmail.com', 'shonemshery@gmail.com'].map((email) => (
                 <li key={email}>
                   <a
                     href={`mailto:${email}`}
@@ -231,7 +249,7 @@ function App() {
         </div>
 
         {/* Bottom row */}
-        <div className="border-t border-slate-100 dark:border-white/10">
+        <div className="border-t border-slate-100 dark:border-neutral-800">
           <div className="max-w-6xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
             <p className="text-xs text-gray-400">
               © {new Date().getFullYear()}PitchPerfect AI. All rights reserved.
